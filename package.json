@@ -1,0 +1,11 @@
+{
+  "name": "echelon",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/orchestrator.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/orchestrator.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+}

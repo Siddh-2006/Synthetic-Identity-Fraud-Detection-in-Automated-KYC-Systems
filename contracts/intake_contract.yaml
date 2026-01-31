@@ -1,0 +1,14 @@
+service: IntakeService
+version: 1.0.0
+endpoints:
+  - path: /start
+    method: POST
+    request:
+      fields:
+        documents: List[File]
+        user_data: Dict
+    response:
+      fields:
+        session_id: UUID
+        status: String
+        metadata: Dict
