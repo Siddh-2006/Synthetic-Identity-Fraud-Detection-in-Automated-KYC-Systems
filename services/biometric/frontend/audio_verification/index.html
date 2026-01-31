@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Liveness Verification</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --success: #10b981;
+            --error: #ef4444;
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f1f5f9;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: var(--card);
+            padding: 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-weight: 700;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .step {
+            margin: 2rem 0;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.02);
+            transition: all 0.3s ease;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .step.active {
+            opacity: 1;
+            pointer-events: all;
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.2s;
+            width: 100%;
+            font-size: 1rem;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.secondary {
+            background-color: #475569;
+        }
+
+        button.record {
+            background-color: var(--error);
+            animation: pulse 2s infinite;
+        }
+
+        button#stopBtn {
+            background-color: #334155;
+            display: none;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .challenge-box {
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            margin: 1rem 0;
+            color: var(--success);
+            text-transform: uppercase;
+        }
+
+        #status {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+
+        .result {
+            display: none;
+            margin-top: 2rem;
+            text-align: left;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+
+        .result.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .result.fail {
+            border-left: 4px solid var(--error);
+        }
+
+        pre {
+            background: #0f172a;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            overflow-x: auto;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Audio Identity Check</h1>
+
+        <!-- Step 1: Get Challenge -->
+        <div id="step1" class="step active">
+            <h3>1. Initiate Session</h3>
+            <p>Get a secure challenge phrase.</p>
+            <button onclick="getChallenge()">Get Challenge</button>
+        </div>
+
+        <!-- Step 2: Record -->
+        <div id="step2" class="step">
+            <h3>2. Verify Liveness</h3>
+            <p>Say the phrase clearly:</p>
+            <div id="challengeText" class="challenge-box">...</div>
+            <div id="pronunciationGuide" style="margin-bottom: 1.5rem; color: #cbd5e1; font-size: 0.9rem;"></div>
+            <button id="recordBtn" onclick="startRecording()">🎤 Hold to Record</button>
+            <button id="stopBtn" onclick="stopRecording()">⏹ Check Now</button>
+            <div id="status">Ready</div>
+        </div>
+
+        <!-- Result -->
+        <div id="resultBox" class="result">
+            <h3 id="resultTitle">Result</h3>
+            <div id="resultBody"></div>
+            <p style="font-size: 0.8rem; opacity: 0.7; margin-top: 10px;">Debug Details:</p>
+            <pre id="debugData"></pre>
+            <button class="secondary" onclick="reset()" style="margin-top: 1rem">Try Again</button>
+        </div>
+    </div>
+
+    <script>
+        let audioContext = null;
+        let processor = null;
+        let input = null;
+        let audioData = [];
+        let recordingLength = 0;
+
+        let currentToken = null;
+
+        async function getChallenge() {
+            try {
+                const res = await fetch('/audio/challenge');
+                const data = await res.json();
+                currentToken = data.token;
+                document.getElementById('challengeText').innerText = data.challenge;
+
+                // Display pronunciation
+                const guide = document.getElementById('pronunciationGuide');
+                if (data.pronunciation) {
+                    guide.innerHTML = `
+                        <div style="font-style: italic; opacity: 0.8;">Hindi: ${data.pronunciation.hindi}</div>
+                        <div style="font-style: italic; opacity: 0.8; margin-top:4px;">Gujarati: ${data.pronunciation.gujarati}</div>
+                    `;
+                }
+
+                // Switch steps
+                document.getElementById('step1').classList.remove('active');
+                document.getElementById('step2').classList.add('active');
+                document.getElementById('status').innerText = "Press Record and say the phrase.";
+            } catch (e) {
+                alert("Error fetching challenge: " + e);
+            }
+        }
+
+        async function startRecording() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert("Microphone access is not supported in this browser.");
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                input = audioContext.createMediaStreamSource(stream);
+
+                // Create a ScriptProcessorNode with a bufferSize of 4096 and a single input and output channel
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                audioData = [];
+                recordingLength = 0;
+
+                processor.onaudioprocess = (e) => {
+                    if (!isRecording) return;
+                    const channelData = e.inputBuffer.getChannelData(0);
+                    audioData.push(new Float32Array(channelData));
+                    recordingLength += channelData.length;
+                };
+
+                input.connect(processor);
+                processor.connect(audioContext.destination);
+
+                isRecording = true;
+
+                // UI Update
+                const btn = document.getElementById('recordBtn');
+                btn.innerHTML = "Recording... (Click to Stop)";
+                btn.classList.add('record');
+                btn.setAttribute('onclick', 'stopRecording()');
+
+                document.getElementById('status').innerText = "Recording... speak now!";
+            } catch (e) {
+                console.error(e);
+                alert("Could not access microphone: " + e.message);
+            }
+        }
+
+        async function stopRecording() {
+            if (isRecording) {
+                isRecording = false;
+
+                // Stop tracks
+                if (input && input.mediaStream) {
+                    input.mediaStream.getTracks().forEach(track => track.stop());
+                }
+                // Depending on browser implementation we might need to close stream from source
+
+                if (audioContext) {
+                    await audioContext.close();
+                }
+
+                // Disconnect
+                if (processor) processor.disconnect();
+                if (input) input.disconnect();
+
+                const btn = document.getElementById('recordBtn');
+                btn.innerHTML = "Processing...";
+                btn.classList.remove('record');
+                btn.disabled = true;
+
+                // Enhance: Convert to Wav
+                const wavBlob = encodeWAV(audioData, recordingLength);
+                await sendAudio(wavBlob);
+            }
+        }
+
+        function encodeWAV(samples, totalLength) {
+            const buffer = new ArrayBuffer(44 + totalLength * 2);
+            const view = new DataView(buffer);
+            const sampleRate = 16000;
+
+            // RIFF chunk descriptor
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + totalLength * 2, true);
+            writeString(view, 8, 'WAVE');
+
+            // fmt sub-chunk
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM usually 1
+            view.setUint16(22, 1, true); // Mono
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true); // 16-bit
+
+            // data sub-chunk
+            writeString(view, 36, 'data');
+            view.setUint32(40, totalLength * 2, true);
+
+            // Check for Float32 and convert to Int16
+            let offset = 44;
+            for (let i = 0; i < samples.length; i++) {
+                const block = samples[i];
+                for (let j = 0; j < block.length; j++) {
+                    let s = Math.max(-1, Math.min(1, block[j]));
+                    // Convert 32-bit float to 16-bit PCM
+                    s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    view.setInt16(offset, s, true);
+                    offset += 2;
+                }
+            }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        async function sendAudio(blob) {
+            document.getElementById('status').innerText = "Analyzing audio biometrics...";
+
+            const formData = new FormData();
+            formData.append("token", currentToken);
+            formData.append("audio", blob, "recording.wav");
+
+            try {
+                const res = await fetch('/audio/verify', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await res.json();
+                showResult(result);
+            } catch (e) {
+                alert("Verification failed: " + e);
+                document.getElementById('recordBtn').disabled = false;
+                document.getElementById('recordBtn').innerHTML = "🎤 Retry Record";
+                document.getElementById('recordBtn').setAttribute('onclick', 'startRecording()');
+            }
+        }
+
+        function showResult(data) {
+            const box = document.getElementById('resultBox');
+            const title = document.getElementById('resultTitle');
+            const body = document.getElementById('resultBody');
+            const debug = document.getElementById('debugData');
+
+            box.style.display = 'block';
+            document.getElementById('step2').classList.remove('active');
+
+            if (data.verified) {
+                box.classList.add('success');
+                box.classList.remove('fail');
+                title.innerText = "✅ Verification Successful";
+                title.style.color = "var(--success)";
+                body.innerHTML = `<p>Confidence Score: <strong>${Math.round(data.confidence * 100)}%</strong></p>`;
+            } else {
+                box.classList.add('fail');
+                box.classList.remove('success');
+                title.innerText = "❌ Verification Failed";
+                title.style.color = "var(--error)";
+                body.innerHTML = `<p>Confidence Score: <strong>${Math.round(data.confidence * 100)}%</strong></p>
+                              <p>Reason: ${data.details.issues ? data.details.issues.join(", ") : "Low confidence"}</p>`;
+            }
+
+            debug.innerText = JSON.stringify(data, null, 2);
+        }
+
+        function reset() {
+            currentToken = null;
+            document.getElementById('resultBox').style.display = 'none';
+            document.getElementById('step1').classList.add('active');
+
+            const btn = document.getElementById('recordBtn');
+            btn.disabled = false;
+            btn.innerHTML = "🎤 Hold to Record";
+            btn.setAttribute('onclick', 'startRecording()');
+
+            document.getElementById('status').innerText = "Ready";
+        }
+    </script>
+
+</body>
+
+</html>
