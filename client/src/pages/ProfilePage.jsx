@@ -5,6 +5,8 @@ import useAuthStore from '../store/authStore';
 const ProfilePage = () => {
   const { user } = useAuthStore();
 
+  if (!user) return <div className="pt-25 text-center">Loading...</div>;
+
   return (
     <div className="pt-25 min-h-screen">
       <div className="container-custom">
@@ -15,12 +17,15 @@ const ProfilePage = () => {
             <User size={48} className="text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold mb-2">{user?.name}</h1>
+            <h1 className="text-3xl font-bold mb-2">{user.name}</h1>
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-[#00ffaa]/10 text-[#00ffaa] rounded-full text-sm border border-[#00ffaa]/20 flex items-center gap-1">
-                <ShieldCheck size={14} /> {user?.kycStatus === 'verified' ? 'Verified Identity' : 'Verification Pending'}
+              <span className={`px-3 py-1 rounded-full text-sm border flex items-center gap-1
+                ${user.kycStatus === 'verified' ? 'bg-[#00ffaa]/10 text-[#00ffaa] border-[#00ffaa]/20' :
+                  user.kycStatus === 'pending' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' :
+                    'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                <ShieldCheck size={14} /> {user.kycStatus?.charAt(0).toUpperCase() + user.kycStatus?.slice(1).replace('_', ' ')}
               </span>
-              <span className="text-text-muted text-sm ml-2">Member since {new Date(user?.createdAt || Date.now()).getFullYear()}</span>
+              <span className="text-text-muted text-sm ml-2">Member since {new Date(user.createdAt).getFullYear()}</span>
             </div>
           </div>
         </div>
@@ -33,15 +38,17 @@ const ProfilePage = () => {
             <div className="grid gap-6">
               <div>
                 <label className="text-sm text-text-muted block mb-1">Email Address</label>
-                <div className="text-base font-medium">{user?.email}</div>
+                <div className="text-base font-medium">{user.email}</div>
               </div>
               <div>
-                <label className="text-sm text-text-muted block mb-1">Phone Number</label>
-                <div className="text-base font-medium">+1 (555) 123-4567</div>
+                <label className="text-sm text-text-muted block mb-1">Date of Birth</label>
+                <div className="text-base font-medium">
+                  {user.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString() : 'Not Provided'}
+                </div>
               </div>
               <div>
-                <label className="text-sm text-text-muted block mb-1">Nationality</label>
-                <div className="text-base font-medium">United States</div>
+                <label className="text-sm text-text-muted block mb-1">National ID</label>
+                <div className="text-base font-medium">{user.nationalIdNumber || 'Not Provided'}</div>
               </div>
             </div>
           </div>
@@ -50,23 +57,33 @@ const ProfilePage = () => {
           <div className="glass-panel p-8">
             <h2 className="text-xl font-semibold mb-6 border-b border-border pb-4">Verification History</h2>
             <div className="grid gap-4">
-              <div className="flex items-center gap-4 p-4 bg-white/5 rounded-lg border border-white/5 hover:border-primary/30 transition-colors">
-                <Clock size={20} className="text-primary" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">Full KYC Verification</div>
-                  <div className="text-xs text-text-muted">Jan 20, 2024</div>
-                </div>
-                <span className="text-[#00ffaa] text-sm font-medium">Completed</span>
-              </div>
 
-              <div className="flex items-center gap-4 p-4 bg-white/5 rounded-lg border border-white/5 hover:border-primary/30 transition-colors">
-                <FileText size={20} className="text-text-muted" />
-                <div className="flex-1">
-                  <div className="text-sm font-medium">Document Update</div>
-                  <div className="text-xs text-text-muted">Dec 15, 2023</div>
+              {user.kycStatus === 'not_started' && (
+                <div className="text-text-muted text-center py-4">No verification actions taken yet.</div>
+              )}
+
+              {user.kycStatus !== 'not_started' && (
+                <div className="flex items-center gap-4 p-4 bg-white/5 rounded-lg border border-white/5 hover:border-primary/30 transition-colors">
+                  <Clock size={20} className="text-primary" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">KYC Submission</div>
+                    <div className="text-xs text-text-muted">{new Date(user.updatedAt).toLocaleDateString()}</div>
+                  </div>
+                  <span className="text-primary text-sm font-medium">Submitted</span>
                 </div>
-                <span className="text-text-muted text-sm font-medium">Archived</span>
-              </div>
+              )}
+
+              {user.kycStatus === 'verified' && (
+                <div className="flex items-center gap-4 p-4 bg-white/5 rounded-lg border border-white/5 hover:border-primary/30 transition-colors">
+                  <ShieldCheck size={20} className="text-[#00ffaa]" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">Identity Verified</div>
+                    <div className="text-xs text-text-muted">{new Date().toLocaleDateString()}</div>
+                  </div>
+                  <span className="text-[#00ffaa] text-sm font-medium">Approved</span>
+                </div>
+              )}
+
             </div>
           </div>
 

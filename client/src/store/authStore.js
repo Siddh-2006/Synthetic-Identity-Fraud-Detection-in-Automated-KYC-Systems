@@ -61,6 +61,46 @@ const useAuthStore = create((set) => ({
     } catch (error) {
       set({ user: null, isAuthenticated: false, isLoading: false });
     }
+  },
+
+  // Update Personal Info
+  updatePersonalInfo: async (data) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await axios.post(`${API_URL.replace('users', 'kyc')}/info`, data);
+      set({ user: response.data, isLoading: false });
+      return response.data;
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error.response?.data?.message || 'Update failed' 
+      });
+      throw error;
+    }
+  },
+
+  // Upload Documents
+  uploadDocuments: async (formData) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await axios.post(`${API_URL.replace('users', 'kyc')}/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      // We need to merge the response data carefully, as it might not be the full user object
+      set((state) => ({ 
+        user: { ...state.user, ...response.data }, 
+        isLoading: false 
+      }));
+      return response.data;
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error.response?.data?.message || 'Upload failed' 
+      });
+      throw error;
+    }
   }
 }));
 

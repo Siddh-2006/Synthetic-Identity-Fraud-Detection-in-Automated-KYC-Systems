@@ -15,6 +15,15 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Personal Info
+  dateOfBirth: { type: Date },
+  nationalIdNumber: { type: String },
+  
+  // Documents
+  aadhaarUrl: { type: String },
+  panUrl: { type: String },
+  
+  // Status
   kycStatus: {
     type: String,
     enum: ['not_started', 'pending', 'verified', 'rejected'],
@@ -22,7 +31,7 @@ const userSchema = new mongoose.Schema({
   },
   verificationStep: {
     type: Number,
-    default: 0
+    default: 1
   }
 }, {
   timestamps: true
@@ -34,9 +43,10 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 };
 
 // Encrypt password using bcrypt
-userSchema.pre('save', async function (next) {
+// Encrypt password using bcrypt
+userSchema.pre('save', async function () {
   if (!this.isModified('password')) {
-    next();
+    return;
   }
 
   const salt = await bcrypt.genSalt(10);

@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
+import kycRoutes from './routes/kycRoutes.js';
 
 dotenv.config();
 
@@ -23,6 +24,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 app.use('/api/users', authRoutes);
+app.use('/api/kyc', kycRoutes);
 
 app.get('/', (req, res) => {
   res.send('API is running...');
