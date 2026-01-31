@@ -89,7 +89,11 @@ async def detect_spoof(file: UploadFile = File(...)):
     return {"liveness_score": report["score"], "is_spoof": report["score"] < 0.15, "report": report}
 
 @app.get("/health")
-def health():
+async def health():
+    return {"status": "ok", "libs": {"librosa": librosa is not None, "sr": sr is not None}}
+
+@app.get("/")
+async def root():
     return {"status": "UP", "service": "BiometricCVService", "port": 8080, "engine": "OpenCV-Haar"}
 
 def extract_landmarks_from_image(img):
@@ -173,6 +177,106 @@ async def analyze_video(file: UploadFile = File(...)):
         "verified_frames_b64": top_verified_frames,
         "status": "SUCCESS" if len(landmarks_sequence) > 0 else "NO_FACE_DETECTED"
     }
+
+# --- NEW: Robust Audio Verification Integration ---
+
+try:
+    import speech_recognition as sr
+    import librosa
+except ImportError:
+    sr = None
+    librosa = None
+
+def fuzzy_match(s1, s2):
+    s1, s2 = s1.lower().strip(), s2.lower().strip()
+    if not s1 or not s2: return 0.0
+    
+    # Levenshtein distance for robustness against minor ASR errors
+    rows = len(s1) + 1
+    cols = len(s2) + 1
+    dist = [[0 for _ in range(cols)] for _ in range(rows)]
+
+    for i in range(1, rows): dist[i][0] = i
+    for i in range(1, cols): dist[0][i] = i
+
+    for col in range(1, cols):
+        for row in range(1, rows):
+            cost = 0 if s1[row-1] == s2[col-1] else 1
+            dist[row][col] = min(dist[row-1][col] + 1,      # deletion
+                                 dist[row][col-1] + 1,      # insertion
+                                 dist[row-1][col-1] + cost) # substitution
+
+    score = 1 - (dist[rows-1][cols-1] / max(len(s1), len(s2)))
+    return score
+
+@app.post("/analyze-audio")
+async def analyze_audio(file: UploadFile = File(...), expected_phrase: str = Form(...)):
+    print(f"[Python-CV] Request received: {file.filename}, Size: {file.size if hasattr(file, 'size') else 'unknown'}")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+        print(f"[Python-CV] Saved to temp: {tmp_path}, Write size: {len(content)}")
+
+    try:
+        # 1. Loading & Anti-Spoof Heuristics (Librosa)
+        liveness_score = 0.5
+        if librosa:
+            try:
+                print(f"[Python-CV] Attempting librosa.load...")
+                y, sr_rate = librosa.load(tmp_path, sr=16000)
+                print(f"[Python-CV] Librosa load success. Duration: {len(y)/sr_rate:.2f}s")
+                # MFCC Variance (Real voice has higher complexity)
+                mfccs = librosa.feature.mfcc(y=y, sr=sr_rate, n_mfcc=13)
+                mfcc_var = np.mean(np.var(mfccs, axis=1))
+                
+                # Spectral Flatness
+                flatness = np.mean(librosa.feature.spectral_flatness(y=y))
+                
+                # Simple scoring
+                liveness_indicators = 0
+                if mfcc_var > 25: liveness_indicators += 1
+                if 0.01 < flatness < 0.1: liveness_indicators += 1
+                liveness_score = liveness_indicators / 2.0
+                print(f" >> Liveness Logic: Var={mfcc_var:.2f}, Flat={flatness:.4f}, Score={liveness_score}")
+            except Exception as e:
+                print(f"[Python-CV] Librosa error: {str(e)}")
+                liveness_score = 0.0
+
+        # 2. ASR Transcription (SpeechRecognition)
+        transcript = ""
+        matching_score = 0.0
+        if sr:
+            try:
+                print(f"[Python-CV] Attempting SpeechRecognition...")
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(tmp_path) as source:
+                    audio_content = recognizer.record(source)
+                
+                # Use Google Web Speech API
+                transcript = recognizer.recognize_google(audio_content)
+                matching_score = fuzzy_match(expected_phrase, transcript)
+                print(f"[Python-CV] ASR Success: '{transcript}', Match: {matching_score}")
+            except Exception as e:
+                print(f" >> ASR Error details: {str(e)}")
+                transcript = f"Error: {str(e)}"
+
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        
+        return {
+            "verified": matching_score >= 0.7 and liveness_score >= 0.5,
+            "transcript": transcript,
+            "matching_score": round(matching_score, 2),
+            "liveness_score": round(liveness_score, 2),
+            "ai_detected": liveness_score < 0.5,
+            "status": "SUCCESS"
+        }
+    except Exception as e:
+        print(f"[Python-CV] CRITICAL ERROR: {str(e)}")
+        if os.path.exists(tmp_path): os.unlink(tmp_path)
+        return {"error": f"Critical Python Error: {str(e)}"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,20 +1,23 @@
-// In a real MERN app, this might use OpenAI Whisper, Google Speech-to-Text, or an open-source model.
-// For the scaffold, we provide a structured implementation that can be easily swapped.
+// In a real MERN app, this would use OpenAI Whisper, Google Speech-to-Text, etc.
+import { analyzeAudio } from './landmarkClient.js';
 
-export const processVoice = async (audioUrl, expectedPhrase) => {
-    // 1. Transcription (Mock for now, would call an STT API)
-    const transcription = expectedPhrase; // Simulating 100% match for the scaffold
+export const processVoice = async (audioBuffer, expectedPhrase) => {
+    console.log(`[VoiceService] Analyzing voice for phrase: "${expectedPhrase}"`);
 
-    // 2. Phrase matching
-    const phraseMatchScore = transcription.toLowerCase() === expectedPhrase.toLowerCase() ? 1.0 : 0.0;
+    // 1. Analyze via Python Microservice (ASR + Anti-Spoof)
+    const analysis = await analyzeAudio(audioBuffer, expectedPhrase);
 
-    // 3. Spoof detection (Placeholder)
-    const voiceSpoofRisk = 0.05; // Low risk placeholder
+    if (analysis.error) {
+        throw new Error(`Voice Analysis Failed: ${analysis.error}`);
+    }
 
     return {
-        transcription,
-        phrase_match: phraseMatchScore >= 0.8,
-        phrase_score: phraseMatchScore,
-        voice_spoof_risk: voiceSpoofRisk
+        transcription: analysis.transcript,
+        phrase_match: analysis.verified,
+        phrase_score: analysis.matching_score,
+        voice_spoof_risk: 1 - analysis.liveness_score,
+        liveness_score: analysis.liveness_score,
+        ai_detected: analysis.ai_detected,
+        analysis_engine: "Python-ASR-Engine"
     };
 };

@@ -26,9 +26,11 @@ router.post('/initiate', async (req, res) => {
         };
 
         const voice_phrases = [
-            "I verify my identity for this secure session",
-            "My name is authorized to access this platform",
-            "The quick brown fox jumps over the lazy dog"
+            "Indigo",
+            "Matrix",
+            "Cipher",
+            "Nebula",
+            "Quantum"
         ];
         const phrase = voice_phrases[Math.floor(Math.random() * voice_phrases.length)];
 
