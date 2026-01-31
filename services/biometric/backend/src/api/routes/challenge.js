@@ -19,14 +19,11 @@ router.post('/initiate', async (req, res) => {
         const challenge_id = uuidv4();
         const expires_at = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes TTL
 
-        // Randomized face challenge (example: target a corner)
-        const targets = [
-            { x: 0.1, y: 0.1 }, // Top-left
-            { x: 0.9, y: 0.1 }, // Top-right
-            { x: 0.1, y: 0.9 }, // Bottom-left
-            { x: 0.9, y: 0.9 }  // Bottom-right
-        ];
-        const target = targets[Math.floor(Math.random() * targets.length)];
+        // Truly random coordinates within a safe visible range (0.1 to 0.9)
+        const target = {
+            x: Math.round((0.1 + Math.random() * 0.8) * 100) / 100,
+            y: Math.round((0.1 + Math.random() * 0.8) * 100) / 100
+        };
 
         const voice_phrases = [
             "I verify my identity for this secure session",

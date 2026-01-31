@@ -41,4 +41,14 @@ export const uploadStream = (buffer, folder, resourceType = 'auto') => {
     });
 };
 
+export const uploadBase64 = (base64Str, folder) => {
+    if (!cloudinaryInstance) {
+        console.log(`[CloudinaryMock] Simulating B64 upload for ${folder}...`);
+        return Promise.resolve({ secure_url: `https://res.cloudinary.com/demo/image/upload/v1/sample_face.jpg` });
+    }
+    return cloudinaryInstance.uploader.upload(`data:image/jpeg;base64,${base64Str}`, {
+        folder: `kyc_biometrics/${folder}`
+    });
+};
+
 export default cloudinary;

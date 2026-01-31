@@ -8,7 +8,7 @@ function App() {
 
     const handleComplete = (result) => {
         console.log('[App] Received results from Biometric Layer:', result);
-        if (result.movement_passed) {
+        if (result.status === 'success') {
             console.log('%c[App] VERIFICATION PASSED ✅', 'color: green; font-weight: bold; font-size: 16px;');
         } else {
             console.warn('%c[App] VERIFICATION FAILED ❌', 'color: red; font-weight: bold; font-size: 16px;');

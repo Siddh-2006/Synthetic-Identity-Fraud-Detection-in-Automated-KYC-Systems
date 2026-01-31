@@ -1,9 +1,10 @@
 import express from 'express';
 import multer from 'multer';
-import { uploadStream } from '../../services/cloudinaryClient.js';
+import { uploadStream, uploadBase64 } from '../../services/cloudinaryClient.js';
 import { analyzeVideo } from '../../services/landmarkClient.js';
 import { calculateEAR, validateMovement, countBlinks } from '../../services/movementValidator.js';
 import BiometricSession from '../../db/models/BiometricSession.js';
+import BiometricAttempt from '../../db/models/BiometricAttempt.js';
 
 const router = express.Router();
 const storage = multer.memoryStorage();
@@ -16,84 +17,113 @@ router.post('/submit', upload.single('video_file'), async (req, res) => {
     const videoFile = req.file;
 
     if (!session_id || !challenge_id || !videoFile) {
-      console.warn(`[FaceSubmit] Missing required fields in request`);
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    console.log(`[FaceSubmit] Received video for session: ${session_id}, file size: ${videoFile.size} bytes`);
+    // Step 1 — Upload original video to Cloudinary (Temporary/Audit)
+    console.log(`[FaceSubmit] Step 1: Uploading temporary video for session ${session_id}...`);
+    const tempVideo = await uploadStream(videoFile.buffer, `biometric_sessions/${session_id}`, 'video');
 
-    // 1. Analyze Video via Python Microservice FIRST
-    console.log(`[FaceSubmit] Requesting video analysis from Python CV service...`);
+    // Step 2-4 — Video Analysis via Python Microservice
+    console.log(`[FaceSubmit] Step 2-4: Requesting video analysis (landmarks + anti-spoof)...`);
     const analysisResult = await analyzeVideo(videoFile.buffer);
 
     if (analysisResult.error) {
-      console.warn(`[FaceSubmit] Python Service Error: ${analysisResult.error}`);
       return res.status(502).json({ error: `CV Service Error: ${analysisResult.error}` });
     }
 
     if (!analysisResult.face_detected) {
-      console.warn(`[FaceSubmit] No face detected in video`);
-      return res.status(422).json({ error: 'No face detected in video. Please ensure your face is clearly visible and try again.' });
-    }
-
-    const landmarksSequence = analysisResult.landmarks_sequence;
-    const ears = landmarksSequence.map(calculateEAR);
-    console.log(`[FaceSubmit] Received landmarks for ${landmarksSequence.length} frames`);
-
-    // 2. Validate Movement and Blinks
-    const session = await BiometricSession.findOne({ session_id });
-    if (!session) return res.status(404).json({ error: 'Session not found' });
-
-    const target = session.challenge?.target_coords || { x: 0.5, y: 0.5 };
-    const movementResult = validateMovement(landmarksSequence, target);
-    const blinkCount = countBlinks(ears);
-
-    console.log(`[FaceSubmit] Result: score=${movementResult.score}, passed=${movementResult.passed}, distance=${(movementResult.distance || 0).toFixed(4)}`);
-
-    if (!movementResult.passed) {
-      console.warn(`[FaceSubmit] Movement validation failed for session ${session_id}`);
-      return res.status(400).json({
-        error: 'Face was not centered on the target dot. Please try again and move your head closer to the dot.',
-        movement_score: movementResult.score,
-        distance: movementResult.distance,
-        retry_suggested: true
+      return res.status(422).json({
+        status: 'retry',
+        reason: 'No face detected in video. Ensure your face is clearly visible.',
+        new_challenge: true
       });
     }
 
-    // 3. ONLY if passed, Upload to Cloudinary
-    console.log(`[FaceSubmit] Verification PASSED. Uploading to Cloudinary for permanent record...`);
-    const uploadResult = await uploadStream(videoFile.buffer, 'face_videos', 'video');
-    const videoUrl = uploadResult.secure_url;
+    // Landmark Motion Validation
+    const session = await BiometricSession.findOne({ session_id });
+    const target = session?.challenge?.target_coords || { x: 0.5, y: 0.5 };
+    const movementResult = validateMovement(analysisResult.landmarks_sequence, target);
 
-    // 4. Update session results
-    await BiometricSession.findOneAndUpdate(
-      { session_id },
-      {
-        $set: {
-          'results.face.media_url': videoUrl,
-          'results.face.movement_score': movementResult.score,
-          'results.face.movement_passed': true,
-          'results.face.blink_count': blinkCount,
-          'results.face.processed_at': new Date()
-        }
+    console.log(`[FaceSubmit] Step 3: Movement Check for ${session_id}`);
+    console.log(` >> Target: x=${target.x}, y=${target.y}`);
+    console.log(` >> Result: distance=${movementResult.distance?.toFixed(4)}, passed=${movementResult.passed}`);
+
+    if (!movementResult.passed) {
+      console.warn(`[FaceSubmit] Movement validation failed (Distance > 0.30)`);
+      await BiometricAttempt.create({
+        session_id, challenge_id,
+        movement_score: movementResult.score,
+        result: 'RETRY', reason: 'movement_not_matched',
+        temporary_video_url: tempVideo.secure_url
+      });
+      return res.status(400).json({
+        status: 'retry',
+        reason: 'Movement did not match the challenge.',
+        new_challenge: true
+      });
+    }
+
+    // Step 4 — Anti-Spoof Model Check
+    console.log(`[FaceSubmit] Step 4: Spoof Check for ${session_id}`);
+    console.log(` >> Liveness: ${analysisResult.liveness_percentage}%`);
+    if (analysisResult.liveness_signals) {
+      const s = analysisResult.liveness_signals;
+      console.log(` >> Signals: Frequency=${s.frequency}, Texture=${s.texture}, Chroma=${s.chroma}`);
+    }
+
+    if (analysisResult.is_spoof) {
+      console.warn(`[FaceSubmit] Anti-spoofing detection triggered! Threshold: < 0.15`);
+      await BiometricAttempt.create({
+        session_id, challenge_id,
+        movement_score: movementResult.score,
+        spoof_score: analysisResult.spoof_score,
+        result: 'RETRY', reason: 'spoof_detected',
+        temporary_video_url: tempVideo.secure_url
+      });
+      return res.status(401).json({
+        status: 'retry',
+        reason: `Liveness check failed (${analysisResult.liveness_percentage || 0}% human). Please ensure you are not using a screen or photo.`,
+        liveness_percentage: analysisResult.liveness_percentage,
+        new_challenge: true
+      });
+    }
+
+    // Step 5-6 — Upload Verified Frames
+    console.log(`[FaceSubmit] Step 5-6: Uploading ${analysisResult.verified_frames_b64?.length} verified frames...`);
+    const verifiedFrameUrls = [];
+    if (analysisResult.verified_frames_b64) {
+      for (const [index, b64] of analysisResult.verified_frames_b64.entries()) {
+        const uploadResult = await uploadBase64(b64, `biometric_verified/${session_id}`);
+        verifiedFrameUrls.push(uploadResult.secure_url);
       }
-    );
+    }
 
-    res.json({
-      message: 'Face verification successful!',
+    // Step 7 — Store Record in MongoDB
+    const attempt = await BiometricAttempt.create({
+      session_id,
+      challenge_id,
       movement_score: movementResult.score,
-      movement_passed: true,
-      blink_count: blinkCount,
-      media_url: videoUrl
+      spoof_score: analysisResult.spoof_score,
+      verified_frame_urls: verifiedFrameUrls,
+      temporary_video_url: tempVideo.secure_url,
+      result: 'SUCCESS',
+      status: 'success'
+    });
+
+    // Step 8 — Response
+    res.json({
+      status: 'success',
+      movement_score: movementResult.score,
+      spoof_score: analysisResult.spoof_score,
+      liveness_percentage: analysisResult.liveness_percentage,
+      verified_frames: verifiedFrameUrls,
+      message: 'Biometric verification passed'
     });
 
   } catch (error) {
     console.error(`[FaceSubmit] CRITICAL ERROR:`, error);
-    res.status(500).json({
-      error: 'Failed to process face video',
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    res.status(500).json({ error: 'Failed to process face video', details: error.message });
   }
 });
 

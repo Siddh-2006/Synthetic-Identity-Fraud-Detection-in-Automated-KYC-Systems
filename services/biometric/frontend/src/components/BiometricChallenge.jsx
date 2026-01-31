@@ -104,14 +104,26 @@ const BiometricChallenge = ({ sessionId, onComplete }) => {
             const result = await resp.json();
             console.log('[BackendAPI] Response received:', result);
 
-            if (resp.ok) {
+            if (resp.ok && result.status === 'success') {
                 console.log('[BackendAPI] SUCCESS:', result);
                 onComplete(result);
                 setStatus('completed');
+            } else if (result.status === 'retry') {
+                console.warn('[BackendAPI] RETRY REQUIRED:', result.reason);
+                let msg = result.reason;
+                if (result.liveness_percentage !== undefined) {
+                    msg = `Liveness Check: ${result.liveness_percentage}% Confidence. ${result.reason}`;
+                }
+                setErrorMessage(msg);
+                if (result.new_challenge) {
+                    initiateChallenge();
+                } else {
+                    setStatus('ready');
+                }
             } else {
                 console.warn('[BackendAPI] FAILED:', result);
                 setErrorMessage(result.error || 'Verification failed. Please try again.');
-                setStatus('ready'); // Allow retry
+                setStatus('ready');
             }
         } catch (err) {
             console.error('[BackendAPI] Network error during upload:', err);
@@ -164,7 +176,26 @@ const BiometricChallenge = ({ sessionId, onComplete }) => {
 
                 {status === 'ready' && (
                     <>
-                        <p>{errorMessage ? 'Let\'s try that again.' : 'Look at the screen and follow the red dot with your head.'}</p>
+                        <p>{errorMessage ? 'Let\'s try that again.' : 'Move your nose to the blue dot and turn your head toward it.'}</p>
+
+                        <div className="verification-tips" style={{
+                            fontSize: '0.9rem',
+                            background: 'rgba(255,255,255,0.05)',
+                            padding: '1rem',
+                            borderRadius: '0.8rem',
+                            textAlign: 'left',
+                            marginTop: '1rem',
+                            border: '1px solid rgba(255,255,255,0.1)'
+                        }}>
+                            <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#818cf8' }}>💡 Tips for Success:</strong>
+                            <ul style={{ margin: 0, paddingLeft: '1.2rem', color: 'var(--text-muted)' }}>
+                                <li>Ensure your face is **well-lit** (avoid backlighting).</li>
+                                <li>Stay roughly **2 feet** away from the camera.</li>
+                                <li>Remove **glasses or masks** for the scan.</li>
+                                <li>Follow the dot **smoothly** with your head.</li>
+                            </ul>
+                        </div>
+
                         <button onClick={startChallenge}>
                             {errorMessage ? 'Try Again' : 'Start Verification'}
                         </button>
