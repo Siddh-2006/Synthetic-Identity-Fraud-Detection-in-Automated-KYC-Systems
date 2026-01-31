@@ -1,0 +1,83 @@
+<html lang="en"><head>
+  <script type="module" src="/@vite/client"></script>
+
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/svg+xml" href="/vite.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Bot Detection Demo</title>
+<style type="text/css" data-vite-dev-id="C:/Users/shah siddh/Downloads/web_bot_detection_dataset/live_bot_detection/frontend/src/index.css">:root {
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+
+    color-scheme: light dark;
+    color: rgba(255, 255, 255, 0.87);
+    background-color: #0f172a;
+
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    margin: 0;
+    display: flex;
+    place-items: center;
+    min-width: 320px;
+    min-height: 100vh;
+}
+
+#root {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2rem;
+    text-align: center;
+}
+
+.card {
+    padding: 2em;
+}
+
+.read-the-docs {
+    color: #888;
+}
+
+button {
+    border-radius: 8px;
+    border: 1px solid transparent;
+    padding: 0.6em 1.2em;
+    font-size: 1em;
+    font-weight: 500;
+    font-family: inherit;
+    background-color: #1a1a1a;
+    cursor: pointer;
+    transition: border-color 0.25s;
+}
+
+button:hover {
+    border-color: #646cff;
+}
+
+button:focus,
+button:focus-visible {
+    outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        color: #213547;
+        background-color: #ffffff;
+    }
+
+    button {
+        background-color: #f9f9f9;
+    }
+}</style></head>
+
+<body>
+    <div id="root"><div class="min-h-screen bg-slate-950 text-slate-100 font-sans p-8"><header class="max-w-4xl mx-auto mb-12 flex justify-between items-center"><div><h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Behavioral Bot Detection</h1><p class="text-slate-400 mt-2">Stage 4: Real-Time Inference Demo</p></div><div class="flex items-center gap-3 bg-slate-900 px-4 py-2 rounded-full border border-slate-800"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 text-slate-500"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg><span class="text-sm font-medium">Idle</span></div></header><main class="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8"><div class="bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-xl"><h2 class="text-xl font-semibold mb-6 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-blue-400"><path d="m4 4 7.07 17 2.51-7.39L21 11.07z"></path></svg>interaction Playground</h2><div class="space-y-6"><div class="h-48 bg-slate-950 rounded-xl border border-slate-800 border-dashed flex items-center justify-center p-4 text-center"><p class="text-slate-500 italic">Click "Start Session" to begin behavioral collection</p></div><div class="flex gap-4"><button id="start-session-btn" class="flex-1 py-4 bg-blue-600 hover:bg-blue-500 transition-colors rounded-xl font-bold text-lg shadow-lg shadow-blue-900/20">Start Session</button></div><div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-800"><div class="flex items-center gap-2 text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg><span class="text-sm">Events: 25</span></div><div class="flex items-center gap-2 text-slate-400"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M3 3v18h18"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg><span class="text-sm">Active: No</span></div></div></div></div><div class="bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-xl min-h-[400px]"><h2 class="text-xl font-semibold mb-6 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-emerald-400"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path><path d="m9 12 2 2 4-4"></path></svg>Detection Result</h2><div class="space-y-8" style="opacity: 1; transform: none;"><div class="p-6 rounded-2xl border-2 text-center text-yellow-400 border-yellow-400 bg-slate-950"><p class="text-xs uppercase tracking-widest font-bold opacity-70 mb-1">Final Classification</p><p class="text-4xl font-black capitalize mb-2">moderate bot</p><div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-current text-sm">97% Confidence</div></div><div><h3 class="text-sm font-semibold text-slate-400 uppercase mb-4 tracking-wider">Analysis breakdown</h3><div class="space-y-3"><div class="space-y-1"><div class="flex justify-between text-xs font-medium"><span class="capitalize">advanced bot</span><span>1%</span></div><div class="h-2 bg-slate-800 rounded-full overflow-hidden"><div class="h-full bg-slate-700" style="width: 0.65443%;"></div></div></div><div class="space-y-1"><div class="flex justify-between text-xs font-medium"><span class="capitalize">human</span><span>2%</span></div><div class="h-2 bg-slate-800 rounded-full overflow-hidden"><div class="h-full bg-slate-700" style="width: 2.27124%;"></div></div></div><div class="space-y-1"><div class="flex justify-between text-xs font-medium"><span class="capitalize">moderate bot</span><span>97%</span></div><div class="h-2 bg-slate-800 rounded-full overflow-hidden"><div class="h-full bg-blue-500" style="width: 97.0743%;"></div></div></div></div></div><div class="p-4 bg-slate-950 rounded-xl border border-slate-800"><p class="text-xs text-slate-500 leading-relaxed">Based on 25 behavioral events. Feature vector successfully mapped to "moderate_bot" using trained XGBoost model.</p></div></div></div></main><footer class="max-w-4xl mx-auto mt-16 text-center text-slate-600 text-xs border-t border-slate-900 pt-8"><p>This demo uses real-time feature engineering linked to a static XGBoost classifier.</p><p class="mt-2 text-emerald-900/40 uppercase tracking-[0.2em]">Project SportsHub - Bot Detection Pipeline</p></footer></div></div>
+    <script type="module" src="/src/main.jsx?t=1769887834049"></script>
+
+
+</body></html>
