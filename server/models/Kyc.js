@@ -1,0 +1,40 @@
+import mongoose from 'mongoose';
+
+const kycSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    unique: true
+  },
+  aadhaar: {
+    number: String,
+    name: String,
+    dob: String,
+    gender: String,
+    details: { type: Map, of: String } // Store all extracted fields
+  },
+  pan: {
+    number: String,
+    name: String,
+    fatherName: String,
+    dob: String,
+    details: { type: Map, of: String }
+  },
+  faceMatch: {
+    isMatch: { type: Boolean, default: false },
+    distance: { type: Number }, // Euclidean distance (lower is better)
+    confidence: { type: Number }
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'verified', 'rejected', 'failed'],
+    default: 'pending'
+  }
+}, {
+  timestamps: true
+});
+
+const Kyc = mongoose.model('Kyc', kycSchema);
+
+export default Kyc;
