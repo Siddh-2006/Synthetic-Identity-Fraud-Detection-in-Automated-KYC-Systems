@@ -26,8 +26,8 @@ router.post('/submit', upload.single('audio_file'), async (req, res) => {
     const uploadResult = await uploadStream(audioFile.buffer, 'voice_audios', 'video');
     const audioUrl = uploadResult.secure_url;
 
-    // 3. Process Voice (Phase 6)
-    const voiceResult = await processVoice(audioUrl, expectedPhrase);
+    // 3. Process Voice (Phase 6) — Passing raw buffer for ASR analysis
+    const voiceResult = await processVoice(audioFile.buffer, expectedPhrase);
 
     // 4. Update session
     await BiometricSession.findOneAndUpdate(
@@ -52,8 +52,11 @@ router.post('/submit', upload.single('audio_file'), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Voice submission error:', error);
-    res.status(500).json({ error: 'Failed to process voice audio' });
+    console.error('[VoiceRoute] CRITICAL ERROR:', error);
+    res.status(500).json({
+      error: 'Failed to process voice audio',
+      details: error.response?.data || error.message
+    });
   }
 });
 
