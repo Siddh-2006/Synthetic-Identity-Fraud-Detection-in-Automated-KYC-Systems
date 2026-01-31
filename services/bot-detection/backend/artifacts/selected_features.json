@@ -1,0 +1,10 @@
+[
+    "mouse_path_length",
+    "mouse_total_clicks",
+    "log_total_requests",
+    "log_unique_url_count",
+    "log_repeat_url_ratio",
+    "log_std_request_interval",
+    "log_html_ratio",
+    "log_image_ratio"
+]
