@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, ShieldCheck, Clock, Activity, MousePointer2 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import axios from 'axios';
-import LiveBotDetector from '../components/LiveBotDetector';
 
 const ProfilePage = () => {
   const { user } = useAuthStore();
@@ -47,9 +46,6 @@ const ProfilePage = () => {
         <div className="flex flex-col gap-12">
           <ProfileTab user={currentUser} />
 
-          <div className="border-t border-white/10 pt-8">
-            <LiveBotDetector />
-          </div>
         </div>
       </div>
     </div>

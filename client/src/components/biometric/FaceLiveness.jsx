@@ -129,7 +129,7 @@ const FaceLiveness = ({ sessionId, onComplete }) => {
       if (resp.ok && (result.status?.toLowerCase() === 'success' || result.result?.toLowerCase() === 'success')) {
         console.log('[BackendAPI] Face verification success');
         setStatus('completed');
-        setTimeout(() => onComplete(result), 1500);
+        setTimeout(() => onComplete(result), 1);
       } else {
         console.warn('[BackendAPI] Verification Failed:', result.reason);
         setErrorMessage(result.reason || result.error || 'Verification failed.');

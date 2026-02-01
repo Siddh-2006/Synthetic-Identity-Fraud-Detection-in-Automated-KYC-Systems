@@ -92,7 +92,9 @@ const KYCPage = () => {
       setAnalysisError(false);
       const fetchAnalysis = async () => {
         try {
+          console.log("Fetching final analysis");
           const res = await axios.get('http://localhost:5000/api/kyc/analysis', { withCredentials: true });
+          console.log("Final analysis", res.data);
           if (res.data) setFinalAnalysis(res.data);
           else setAnalysisError(true);
         } catch (e) {

@@ -6,6 +6,7 @@ import { validateMovement } from '../services/movementValidator.js';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import Kyc from '../models/Kyc.js';
 
 const debugLog = (msg) => {
     const logPath = path.join(process.cwd(), 'biometric_debug.log');
@@ -94,23 +95,19 @@ export const submitFace = async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields', details: { session_id: !!session_id, challenge_id: !!challenge_id, videoFile: !!videoFile } });
         }
 
-        // 1. Upload original video
-        debugLog(`${logPrefix} Step 1: Uploading video to Cloudinary...`);
-        let tempVideo;
-        try {
-            tempVideo = await uploadStream(videoFile.buffer, `biometric_sessions/${session_id}`, 'video');
-            debugLog(`${logPrefix} Step 1 Success: ${tempVideo.secure_url}`);
-        } catch (err) {
-            debugLog(`${logPrefix} Step 1 FAILED: ${err.message}`);
-            return res.status(400).json({ error: 'Cloudinary Upload Failed', details: err.message });
-        }
+        // 1. Skip Cloudinary upload for video to save time (User Request)
+        console.log(`[FaceSubmit] Skipping video upload to Cloudinary for speed.`);
+        const videoUrl = null; 
 
         // 2. Video Analysis
         debugLog(`${logPrefix} Step 2: Requesting video analysis from Python service...`);
+        const analysisStart = Date.now();
         let analysisResult;
         try {
             analysisResult = await analyzeVideo(videoFile.buffer);
-            debugLog(`${logPrefix} Step 2 Success: face_detected=${analysisResult.face_detected}`);
+            const analysisDuration = Date.now() - analysisStart;
+            console.log(`⏱️ [FaceAnalysis] Microservice response took ${analysisDuration}ms for session: ${session_id}`);
+            debugLog(`${logPrefix} Step 2 Success: face_detected=${analysisResult.face_detected} (${analysisDuration}ms)`);
             console.log(`[FaceSubmit] Analysis complete. Face Detected: ${analysisResult.face_detected}`);
         } catch (err) {
             debugLog(`${logPrefix} Step 2 FAILED: ${err.message}`);
@@ -151,7 +148,7 @@ export const submitFace = async (req, res) => {
                  session_id, challenge_id,
                  movement_score: movementResult.score,
                  result: 'RETRY', reason: 'movement_not_matched',
-                 temporary_video_url: tempVideo.secure_url
+                 temporary_video_url: videoUrl
              });
              return res.status(400).json({
                  status: 'retry',
@@ -172,7 +169,7 @@ export const submitFace = async (req, res) => {
                 movement_score: movementResult.score,
                 spoof_score: analysisResult.spoof_score,
                 result: 'RETRY', reason: 'spoof_detected',
-                temporary_video_url: tempVideo.secure_url
+                temporary_video_url: videoUrl
             });
             return res.status(401).json({
                 status: 'retry',
@@ -200,7 +197,7 @@ export const submitFace = async (req, res) => {
             movement_score: movementResult.score,
             spoof_score: analysisResult.spoof_score,
             verified_frame_urls: verifiedFrameUrls,
-            temporary_video_url: tempVideo.secure_url,
+            temporary_video_url: videoUrl,
             result: 'SUCCESS'
         });
 
@@ -214,7 +211,7 @@ export const submitFace = async (req, res) => {
                     'results.face.movement_passed': movementResult.passed,
                     'results.face.spoof_risk': 1 - (analysisResult.spoof_score || 0),
                     'results.face.liveness_score': analysisResult.spoof_score,
-                    'results.face.media_url': tempVideo.secure_url,
+                    'results.face.media_url': videoUrl,
                     'results.face.processed_at': new Date(),
                     'results.status': 'COMPLETED'
                 }
@@ -277,7 +274,10 @@ export const submitVoice = async (req, res) => {
         const uploadResult = await uploadStream(audioFile.buffer, 'voice_audios');
         const audioUrl = uploadResult.secure_url;
 
+        const voiceStart = Date.now();
         const voiceResult = await processVoice(audioFile.buffer, expectedPhrase);
+        const voiceDuration = Date.now() - voiceStart;
+        console.log(`⏱️ [VoiceAnalysis] Microservice response took ${voiceDuration}ms for session: ${session_id}`);
 
         await BiometricSession.findOneAndUpdate(
             { session_id },

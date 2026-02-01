@@ -1,8 +1,10 @@
 import User from '../models/User.js';
-import { cloudinary } from '../config/cloudinary.js';
-import fs from 'fs';
 import Kyc from '../models/Kyc.js';
 import BiometricSession from '../models/BiometricSession.js';
+import { cloudinary } from '../config/cloudinary.js';
+import fs from 'fs';
+import axios from 'axios';
+import { extractAadhaar, extractPan, extractFace, detectFraud, verifyFace } from '../services/fastapiService.js';
 
 // @desc    Update personal info (Step 1)
 // @route   POST /api/kyc/info
@@ -47,8 +49,6 @@ const updatePersonalInfo = async (req, res) => {
   }
 };
 
-import Kyc from '../models/Kyc.js';
-import { extractAadhaar, extractPan, extractFace, detectFraud, verifyFace } from '../services/fastapiService.js';
 
 // @desc    Upload KYC Documents (Step 2)
 // @route   POST /api/kyc/upload
@@ -140,6 +140,7 @@ const uploadDocuments = async (req, res) => {
         });
 
     // Wait for all critical parts to finish to save DB
+    const startStep2 = Date.now();
     const [uploads, aadhaarOcr, panOcr, fraudData, faceData] = await Promise.all([
         uploadPromise, 
         aadhaarOcrPromise, 
@@ -147,6 +148,8 @@ const uploadDocuments = async (req, res) => {
         fraudPromise, 
         faceMatchPromise
     ]);
+    const durationStep2 = Date.now() - startStep2;
+    console.log(`⏱️ [Step2Processing] Total microservice parallel processing took ${durationStep2}ms`);
     
     // Cross-Validate Information
     const normalizeText = (text) => {
@@ -300,7 +303,6 @@ const uploadDocuments = async (req, res) => {
   }
 };
 
-import axios from 'axios';
 
 // @desc    Verify Selfie (Step 3)
 // @route   POST /api/kyc/biometric
@@ -338,10 +340,13 @@ const verifyBiometric = async (req, res) => {
             extractFace(selfiePath)
         ]);
         
+        const verifyStart = Date.now();
         let matchResult = { verified: false };
         if (aadhaarFace && selfieFace) {
              matchResult = await verifyFace(aadhaarFace, selfieFace);
         }
+        const verifyDuration = Date.now() - verifyStart;
+        console.log(`⏱️ [FaceMatch] Aadhaar-Selfie comparison took ${verifyDuration}ms`);
         
         // Cleanup temp
         if (fs.existsSync(tempAadhaarPath)) fs.unlinkSync(tempAadhaarPath);
@@ -384,42 +389,47 @@ const verifyBiometric = async (req, res) => {
 const getKycAnalysis = async (req, res) => {
     try {
         const user = await User.findById(req.user._id);
+        console.log(`USER for analysis : ${user}`)
         if (!user) return res.status(404).json({ message: 'User not found' });
 
+        // User specifically asked to use Kyc model data
         const kyc = await Kyc.findOne({ user: user._id }).lean();
-        const biometric = await BiometricSession.findOne({ 
-            session_id: { $regex: user._id.toString(), $options: 'i' }
-        }).sort({ createdAt: -1 }).lean();
+        if (!kyc) return res.status(404).json({ message: 'KYC data not found for this user' });
 
+        console.log(`USER KYC for analysis : ${kyc}`)
+
+        // Map Kyc model data to the structure the frontend expects
         const analysis = {
             user: {
                 name: user.name,
                 email: user.email,
                 botDetection: user.botDetectionResult
             },
-            documents: kyc ? {
+            documents: {
                 aadhaar: kyc.aadhaar,
                 pan: kyc.pan,
                 forgery: kyc.aadhaarForgeryDetection,
                 crossMatch: kyc.AadharPanMatch,
                 profileMatch: kyc.profileMatch,
                 faceMatch: kyc.faceMatch
-            } : null,
-            biometric: biometric ? {
-                face: biometric.results?.face,
-                voice: biometric.results?.voice,
-                status: biometric.results?.status
-            } : null,
+            },
+            biometric: {
+                face: kyc.livenessCheck,
+                voice: kyc.voiceCheck,
+                status: kyc.status === 'verified' ? 'COMPLETED' : 'PENDING'
+            },
             finalVerdict: {
                 status: user.kycStatus,
                 isTrusted: (
                     user.kycStatus === 'verified' && 
                     user.botDetectionResult?.prediction === 'human' &&
-                    kyc?.aadhaarForgeryDetection?.verdict === 'Real' &&
-                    kyc?.faceMatch?.isMatch === true
+                    kyc.aadhaarForgeryDetection?.verdict === 'Real' &&
+                    kyc.faceMatch?.isMatch === true
                 ) ? 'TRUSTED' : 'SUSPICIOUS'
             }
         };
+
+        console.log(`USER KYC for analysis : ${analysis}`)
 
         res.json(analysis);
     } catch (error) {

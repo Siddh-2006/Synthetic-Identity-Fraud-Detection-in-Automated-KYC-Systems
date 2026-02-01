@@ -9,11 +9,13 @@ const extractAadhaar = async (filePath) => {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(filePath));
 
+    const start = Date.now();
     const response = await axios.post(`${FASTAPI_URL}/api/ocr/aadhaar`, formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
+    console.log(`📡 [FastAPI] Aadhaar OCR took ${Date.now() - start}ms`);
 
     return response.data;
   } catch (error) {
@@ -27,11 +29,13 @@ const extractPan = async (filePath) => {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(filePath));
 
+    const start = Date.now();
     const response = await axios.post(`${FASTAPI_URL}/api/ocr/pan`, formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
+    console.log(`📡 [FastAPI] PAN OCR took ${Date.now() - start}ms`);
 
     return response.data;
   } catch (error) {
@@ -45,12 +49,14 @@ const extractFace = async (filePath) => {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(filePath));
 
+    const start = Date.now();
     const response = await axios.post(`${FASTAPI_URL}/api/extraction/face`, formData, {
       headers: {
         ...formData.getHeaders(),
       },
       responseType: 'arraybuffer', // Get image buffer
     });
+    console.log(`📡 [FastAPI] Face Extraction took ${Date.now() - start}ms`);
 
     return response.data; // This is the image buffer
   } catch (error) {
@@ -76,11 +82,13 @@ const detectFraud = async (filePath) => {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(filePath));
 
+    const start = Date.now();
     const response = await axios.post(`${FRAUD_DETECTION_URL}/predict`, formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
+    console.log(`📡 [FastAPI] Forgery Detection took ${Date.now() - start}ms`);
 
     return response.data;
   } catch (error) {
@@ -118,11 +126,13 @@ const verifyFace = async (aadhaarFaceBuffer, panFaceBuffer) => {
     // Let's try to match the variable names in the user prompt: "two user image"
     // I will use 'img1' and 'img2' as they are common for comparison tools
     
+    const start = Date.now();
     const response = await axios.post(`${FACE_VERIFICATION_URL}/verify-face`, formData, {
       headers: {
         ...formData.getHeaders(),
       },
     });
+    console.log(`📡 [FastAPI] Face Match took ${Date.now() - start}ms`);
 
     return response.data;
   } catch (error) {
