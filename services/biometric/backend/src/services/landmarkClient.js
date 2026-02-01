@@ -20,3 +20,22 @@ export const analyzeVideo = async (videoBuffer) => {
         throw error;
     }
 };
+
+export const analyzeAudio = async (audioBuffer, expectedPhrase) => {
+    try {
+        const formData = new FormData();
+        formData.append('file', audioBuffer, { filename: 'audio.wav' });
+        formData.append('expected_phrase', expectedPhrase);
+
+        const response = await axios.post(`${PYTHON_SERVICE_URL}/analyze-audio`, formData, {
+            headers: {
+                ...formData.getHeaders(),
+            },
+        });
+
+        return response.data;
+    } catch (error) {
+        console.error(`[LandmarkClient] Error analyzing audio:`, error.message);
+        throw error;
+    }
+};

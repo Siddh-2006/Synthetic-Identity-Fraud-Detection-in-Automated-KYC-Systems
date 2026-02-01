@@ -99,19 +99,33 @@ router.post('/submit', upload.single('video_file'), async (req, res) => {
       }
     }
 
-    // Step 7 — Store Record in MongoDB
-    const attempt = await BiometricAttempt.create({
+    // Step 7 — Store Record in MongoDB (Attempt Log)
+    await BiometricAttempt.create({
       session_id,
       challenge_id,
       movement_score: movementResult.score,
       spoof_score: analysisResult.spoof_score,
       verified_frame_urls: verifiedFrameUrls,
       temporary_video_url: tempVideo.secure_url,
-      result: 'SUCCESS',
-      status: 'success'
+      result: 'SUCCESS'
     });
 
-    // Step 8 — Response
+    // Step 8 — Update Main Session Results
+    await BiometricSession.findOneAndUpdate(
+      { session_id },
+      {
+        $set: {
+          'results.face.movement_score': movementResult.score,
+          'results.face.movement_passed': movementResult.passed,
+          'results.face.spoof_risk': 1 - (analysisResult.spoof_score || 0),
+          'results.face.liveness_score': analysisResult.spoof_score,
+          'results.face.media_url': tempVideo.secure_url,
+          'results.face.processed_at': new Date()
+        }
+      }
+    );
+
+    // Step 9 — Response
     res.json({
       status: 'success',
       movement_score: movementResult.score,

@@ -2,7 +2,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
 
-const FASTAPI_URL = 'http://127.0.0.1:8000';
+const FASTAPI_URL = process.env.PYTHON_SERVICE_URL || 'http://127.0.0.1:8000';
 
 const extractAadhaar = async (filePath) => {
   try {
@@ -57,12 +57,12 @@ const extractFace = async (filePath) => {
     console.error('FastAPI Face Extraction Error:', error.message);
     // If it's a 4xx/5xx, try to read the error message from buffer
     if (error.response && error.response.data) {
-        try {
-            const errJson = JSON.parse(error.response.data.toString());
-            console.error('FastAPI Detailed Error:', errJson);
-        } catch (e) {
-            // ignore
-        }
+      try {
+        const errJson = JSON.parse(error.response.data.toString());
+        console.error('FastAPI Detailed Error:', errJson);
+      } catch (e) {
+        // ignore
+      }
     }
     throw new Error('Failed to extract face');
   }

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const BiometricChallenge = ({ sessionId, onComplete }) => {
+    const [status, setStatus] = useState('initializing'); // 'initializing', 'ready', 'active', 'recording_complete', 'completed', 'error'
     const [challenge, setChallenge] = useState(null);
-    const [status, setStatus] = useState('initializing');
     const [countdown, setCountdown] = useState(null);
     const [errorMessage, setErrorMessage] = useState(null);
+    const [livenessResult, setLivenessResult] = useState(null);
     const videoRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const chunksRef = useRef([]);
@@ -17,7 +18,7 @@ const BiometricChallenge = ({ sessionId, onComplete }) => {
     const setupCamera = async () => {
         console.log('[Camera] Requesting permissions...');
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             console.log('[Camera] Access granted. Feed active.');
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
@@ -94,120 +95,88 @@ const BiometricChallenge = ({ sessionId, onComplete }) => {
             const formData = new FormData();
             formData.append('session_id', sessionId);
             formData.append('challenge_id', challenge.challenge_id);
-            formData.append('video_file', blob, 'challenge_video.webm');
+            formData.append('video_file', blob, 'recording.webm');
 
             const resp = await fetch('http://localhost:5000/biometric/face/submit', {
                 method: 'POST',
                 body: formData
             });
-
             const result = await resp.json();
             console.log('[BackendAPI] Response received:', result);
 
-            if (resp.ok && result.status === 'success') {
-                console.log('[BackendAPI] SUCCESS:', result);
-                onComplete(result);
+            if (resp.ok && (result.status?.toLowerCase() === 'success' || result.result?.toLowerCase() === 'success')) {
+                console.log('[BackendAPI] Face verification success');
+                setLivenessResult(result);
                 setStatus('completed');
+                setTimeout(() => onComplete(result), 1500);
             } else if (result.status === 'retry') {
                 console.warn('[BackendAPI] RETRY REQUIRED:', result.reason);
-                let msg = result.reason;
-                if (result.liveness_percentage !== undefined) {
-                    msg = `Liveness Check: ${result.liveness_percentage}% Confidence. ${result.reason}`;
-                }
-                setErrorMessage(msg);
-                if (result.new_challenge) {
-                    initiateChallenge();
-                } else {
-                    setStatus('ready');
-                }
+                setErrorMessage(result.reason);
+                initiateChallenge();
             } else {
-                console.warn('[BackendAPI] FAILED:', result);
                 setErrorMessage(result.error || 'Verification failed. Please try again.');
                 setStatus('ready');
             }
         } catch (err) {
             console.error('[BackendAPI] Network error during upload:', err);
-            setErrorMessage('Connection error. Please check your internet and try again.');
+            setErrorMessage('Connection error. Please try again.');
             setStatus('ready');
         }
     };
 
-    if (status === 'initializing') return <div className="loading">Loading KYC Challenge...</div>;
-    if (status === 'error') return <div className="error-screen">Error loading challenge. Please refresh.</div>;
-
     return (
-        <div className="card biometric-card">
-            <h3>Biometric Verification</h3>
-
-            <div className="camera-container">
-                <video ref={videoRef} autoPlay muted className="camera-feed" />
+        <div className="card" style={{ maxWidth: '640px', margin: '0 auto' }}>
+            <div className="camera-container" style={{ position: 'relative', overflow: 'hidden' }}>
+                <video ref={videoRef} className="camera-feed" autoPlay muted playsInline />
 
                 {status === 'active' && challenge?.face_challenge?.target_coords && (
-                    <div className="challenge-overlay">
-                        <div
-                            className="target-dot"
-                            style={{
-                                top: `${challenge.face_challenge.target_coords.y * 100}%`,
-                                left: `${challenge.face_challenge.target_coords.x * 100}%`
-                            }}
-                        />
-                    </div>
+                    <div className="target-dot" style={{
+                        top: `${challenge.face_challenge.target_coords.y * 100}%`,
+                        left: `${challenge.face_challenge.target_coords.x * 100}%`,
+                        position: 'absolute',
+                        zIndex: 10
+                    }} />
                 )}
 
-                {countdown !== null && status === 'active' && (
-                    <div className="instruction-toast countdown-timer">
+                {status === 'active' && (
+                    <div style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(0,0,0,0.5)', padding: '5px 10px', borderRadius: '5px', color: 'white' }}>
                         {countdown}s
                     </div>
                 )}
 
                 {status === 'recording_complete' && (
-                    <div className="instruction-toast processing">
+                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px 20px', borderRadius: '20px', zIndex: 20 }}>
                         Analyzing movement...
                     </div>
                 )}
             </div>
 
-            <div className="instructions">
-                {errorMessage && (
-                    <div className="error-message" style={{ color: '#ff4d4d', marginBottom: '1rem', fontWeight: 'bold' }}>
-                        {errorMessage}
-                    </div>
-                )}
+            <div className="instructions" style={{ padding: '1rem' }}>
+                {status === 'initializing' && <p>Initializing biometric layer...</p>}
 
                 {status === 'ready' && (
                     <>
-                        <p>{errorMessage ? 'Let\'s try that again.' : 'Move your nose to the blue dot and turn your head toward it.'}</p>
-
-                        <div className="verification-tips" style={{
-                            fontSize: '0.9rem',
-                            background: 'rgba(255,255,255,0.05)',
-                            padding: '1rem',
-                            borderRadius: '0.8rem',
-                            textAlign: 'left',
-                            marginTop: '1rem',
-                            border: '1px solid rgba(255,255,255,0.1)'
-                        }}>
-                            <strong style={{ display: 'block', marginBottom: '0.5rem', color: '#818cf8' }}>💡 Tips for Success:</strong>
-                            <ul style={{ margin: 0, paddingLeft: '1.2rem', color: 'var(--text-muted)' }}>
-                                <li>Ensure your face is **well-lit** (avoid backlighting).</li>
-                                <li>Stay roughly **2 feet** away from the camera.</li>
-                                <li>Remove **glasses or masks** for the scan.</li>
-                                <li>Follow the dot **smoothly** with your head.</li>
-                            </ul>
-                        </div>
-
+                        <p style={{ color: errorMessage ? '#f87171' : 'inherit' }}>
+                            {errorMessage ? errorMessage : 'Stage 1: Position your nose on the blue dot and follow it.'}
+                        </p>
                         <button onClick={startChallenge}>
-                            {errorMessage ? 'Try Again' : 'Start Verification'}
+                            {errorMessage ? 'Try Again' : 'Start Face Scan'}
                         </button>
                     </>
                 )}
 
-                {status === 'active' && <p>Keep following the dot...</p>}
+                {status === 'active' && <p>Keep your eyes on the blue dot...</p>}
 
                 {status === 'completed' && (
-                    <div className="success-message" style={{ color: '#22c55e' }}>
-                        <h4>Verification Passed! ✅</h4>
-                        <p>You may now proceed.</p>
+                    <div className="success-message" style={{ color: '#4ade80', fontWeight: 'bold' }}>
+                        Face Verified! ✅
+                    </div>
+                )}
+
+                {status === 'error' && (
+                    <div className="error-message" style={{ color: '#f87171' }}>
+                        <p>Camera Error: Please check permissions.</p>
+                        <button onClick={() => window.location.reload()}>Reload</button>
                     </div>
                 )}
             </div>
