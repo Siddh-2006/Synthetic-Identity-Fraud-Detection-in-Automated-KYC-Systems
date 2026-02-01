@@ -14,6 +14,12 @@ const kycSchema = new mongoose.Schema({
     gender: String,
     details: { type: Map, of: String } // Store all extracted fields
   },
+  aadhaarForgeryDetection: {
+    verdict: String,
+    confidence: String,
+    raw_score: Number,
+    filename: String
+  },
   pan: {
     number: String,
     name: String,
@@ -24,7 +30,14 @@ const kycSchema = new mongoose.Schema({
   faceMatch: {
     isMatch: { type: Boolean, default: false },
     distance: { type: Number }, // Euclidean distance (lower is better)
-    confidence: { type: Number }
+    threshold: { type: Number },
+    model: { type: String },
+    verified: { type: Boolean }
+  },
+  AadharPanMatch: {
+    nameMatch: { type: Boolean, default: false },
+    dobMatch: { type: Boolean, default: false },
+    genderMatch: { type: Boolean, default: false }
   },
   status: {
     type: String,

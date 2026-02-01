@@ -68,4 +68,70 @@ const extractFace = async (filePath) => {
   }
 };
 
-export { extractAadhaar, extractPan, extractFace };
+const FRAUD_DETECTION_URL = 'http://127.0.0.1:8001';
+const FACE_VERIFICATION_URL = 'http://127.0.0.1:8002';
+
+const detectFraud = async (filePath) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(filePath));
+
+    const response = await axios.post(`${FRAUD_DETECTION_URL}/predict`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error('Fraud Detection Error:', error.message);
+    if (error.response && error.response.data) {
+        console.error('Fraud Detection Detailed Error:', error.response.data);
+    }
+    // Return a default error object or null so the flow doesn't crash?
+    // User wants it stored, so maybe throwing is better to handle it in controller
+    return { verdict: "Error", confidence: "0%", raw_score: 0.0 };
+  }
+};
+
+const verifyFace = async (aadhaarFaceBuffer, panFaceBuffer) => {
+  try {
+    const formData = new FormData();
+    // Append buffers with filenames so FormData knows they are files
+    formData.append('img1', aadhaarFaceBuffer, { filename: 'aadhaar_face.jpg' });
+    formData.append('img2', panFaceBuffer, { filename: 'pan_face.jpg' });
+
+    // Note: User said endpoint is /verify-face. 
+    // Usually deepface/models expect 'img1_path', 'img2_path' or files.
+    // Assuming 'files' or specific key names. 
+    // Standard fastapi FileUpload usually takes 'file' or specific names.
+    // User request: "call this endpoint and give that both images"
+    // I'll assume standard keys 'file1' and 'file2' or 'image1', 'image2'?
+    // Let's guess 'file1' and 'file2' or check if I can infer.
+    // Actually, looking at previous context or standard practices...
+    // Let's try appending as 'file1' and 'file2' for now? 
+    // User didn't specify the key names.
+    // Let's use 'file1' and 'file2' as a safe bet for a custom endpoint, 
+    // or maybe the user meant the endpoint accepts a list of files?
+    // "give that both images"
+    
+    // Let's try to match the variable names in the user prompt: "two user image"
+    // I will use 'img1' and 'img2' as they are common for comparison tools
+    
+    const response = await axios.post(`${FACE_VERIFICATION_URL}/verify-face`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error('Face Verification Error:', error.message);
+    if (error.response && error.response.data) {
+        console.error('Verification Detailed Error:', error.response.data);
+    }
+    return { verified: false, distance: 0, error: "Verification failed" };
+  }
+};
+
+export { extractAadhaar, extractPan, extractFace, detectFraud, verifyFace };

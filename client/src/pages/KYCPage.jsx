@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, CheckCircle, Smartphone, Camera, Loader2, ArrowRight } from 'lucide-react';
+import { Upload, CheckCircle, Smartphone, Camera, Loader2, ArrowRight, ShieldCheck, ScanFace, FileText, Server } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 const steps = [
   { id: 1, title: 'Personal Info', desc: 'Enter your basic details' },
-  { id: 2, title: 'Document Upload', desc: 'Upload PDF or Image of ID' },
+  { id: 2, title: 'Document Verification', desc: 'Upload & Validate IDs' },
   { id: 3, title: 'Biometric Scan', desc: 'Face verification' },
-  { id: 4, title: 'AI Analysis', desc: 'Waiting for validation' }
+  { id: 4, title: 'AI Analysis', desc: 'Final Validation' }
 ];
 
 const KYCPage = () => {
-  const { user, updatePersonalInfo, uploadDocuments, isLoading } = useAuthStore();
+  const { user, updatePersonalInfo, uploadDocuments, isLoading: authLoading } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [personalInfo, setPersonalInfo] = useState({
     firstName: '',
@@ -24,15 +25,31 @@ const KYCPage = () => {
     pan: null
   });
 
+  // Detailed Processing States
+  const [processingStage, setProcessingStage] = useState('idle'); // idle, uploading, ocr, authenticating, matching, complete
+  const [apiResponses, setApiResponses] = useState({
+    ocr: null,
+    authenticity: null,
+    faceMatch: null,
+    crossMatch: null
+  });
+  const [canContinue, setCanContinue] = useState(false);
+
   // Sync step with user status from backend
   useEffect(() => {
     if (user?.verificationStep) {
-      setCurrentStep(user.verificationStep);
+      if (user.verificationStep > currentStep) {
+        setCurrentStep(user.verificationStep);
+      }
     }
-    // Pre-fill info if available
+    // Pre-fill info
     if (user?.name) {
-      const [first, ...last] = user.name.split(' ');
-      setPersonalInfo(prev => ({ ...prev, firstName: first, lastName: last.join(' ') }));
+      const parts = user.name.split(' ');
+      setPersonalInfo(prev => ({
+        ...prev,
+        firstName: parts[0],
+        lastName: parts.slice(1).join(' ')
+      }));
     }
   }, [user]);
 
@@ -44,29 +61,183 @@ const KYCPage = () => {
     setFiles({ ...files, [e.target.name]: e.target.files[0] });
   };
 
-  const handleNext = async () => {
+  const handlePersonalInfoSubmit = async () => {
     try {
-      if (currentStep === 1) {
-        await updatePersonalInfo(personalInfo);
-        setCurrentStep(2);
-      } else if (currentStep === 2) {
-        if (!files.aadhaar || !files.pan) {
-          alert("Please upload both documents");
-          return;
-        }
-        const formData = new FormData();
-        formData.append('aadhaar', files.aadhaar);
-        formData.append('pan', files.pan);
-        await uploadDocuments(formData);
-        setCurrentStep(3);
-      } else if (currentStep === 3) {
-        // Biometric Placeholder
-        // await biometricScan()
-        setCurrentStep(4);
-      }
+      await updatePersonalInfo(personalInfo);
+      setCurrentStep(2);
     } catch (error) {
       console.error(error);
     }
+  };
+
+  /* Stream Reader Utility */
+  const readStream = async (reader) => {
+    const decoder = new TextDecoder();
+    let partial = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = (partial + chunk).split('\n');
+      partial = lines.pop(); // Keep incomplete line
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          handleStreamMessage(msg);
+        } catch (e) {
+          console.error("Stream parse error:", e);
+        }
+      }
+    }
+  };
+
+  const handleStreamMessage = (msg) => {
+    console.log("Stream Msg:", msg);
+
+    switch (msg.type) {
+      case 'start':
+        setProcessingStage('uploading');
+        break;
+      case 'upload_complete':
+        setProcessingStage('ocr');
+        break;
+      case 'ocr_aadhaar':
+        setApiResponses(prev => ({
+          ...prev,
+          ocr: { ...prev.ocr, aadhaar: msg.data }
+        }));
+        break;
+      case 'ocr_pan':
+        setApiResponses(prev => ({
+          ...prev,
+          ocr: { ...prev.ocr, pan: msg.data }
+        }));
+        break;
+      case 'fraud_check':
+        setProcessingStage('authenticating');
+        setApiResponses(prev => ({ ...prev, authenticity: msg.data }));
+        break;
+      case 'cross_match':
+        setApiResponses(prev => ({ ...prev, crossMatch: msg.data }));
+        break;
+      case 'face_match':
+        setProcessingStage('matching');
+        setApiResponses(prev => ({ ...prev, faceMatch: msg.data }));
+        break;
+      case 'complete':
+        setProcessingStage('complete');
+        setCanContinue(true);
+        break;
+      case 'error':
+        alert(msg.message);
+        setProcessingStage('idle');
+        setCanContinue(false);
+        break;
+    }
+  };
+
+  const handleDocumentSubmit = async () => {
+    if (!files.aadhaar || !files.pan) {
+      alert("Please upload both documents");
+      return;
+    }
+
+    setProcessingStage('uploading');
+    setCanContinue(false);
+
+    // Reset responses
+    setApiResponses({ ocr: {}, authenticity: null, faceMatch: null, crossMatch: null });
+
+    try {
+      const formData = new FormData();
+      formData.append('aadhaar', files.aadhaar);
+      formData.append('pan', files.pan);
+
+      // Use fetch for streaming
+      const response = await fetch('http://localhost:5000/api/kyc/upload', {
+        method: 'POST',
+        headers: {}, // No manual auth header, usage of cookies
+        credentials: 'include', // Important for sending cookies
+        body: formData
+      });
+
+      if (!response.body) throw new Error("No response body");
+      const reader = response.body.getReader();
+      await readStream(reader);
+
+    } catch (error) {
+      console.error("Document Processing Error:", error);
+      setProcessingStage('idle');
+      alert("Processing failed. Please try again.");
+    }
+  };
+
+  // Biometric Logic
+  const videoRef = React.useRef(null);
+  const [cameraActive, setCameraActive] = React.useState(false);
+  const [capturedImage, setCapturedImage] = React.useState(null);
+  const [biometricResult, setBiometricResult] = React.useState(null);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setCameraActive(true);
+      }
+    } catch (err) {
+      console.error("Camera Error:", err);
+      alert("Cannot access camera");
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    canvas.getContext("2d").drawImage(videoRef.current, 0, 0);
+    canvas.toBlob((blob) => {
+      setCapturedImage(blob);
+      setCameraActive(false);
+      // Stop stream
+      const stream = videoRef.current.srcObject;
+      stream?.getTracks().forEach(track => track.stop());
+    }, 'image/jpeg');
+  };
+
+  const handleBiometricSubmit = async () => {
+    if (!capturedImage) return;
+
+    const formData = new FormData();
+    formData.append('selfie', capturedImage, "selfie.jpg");
+
+    try {
+      const res = await axios.post('http://localhost:5000/api/kyc/biometric', formData, {
+        withCredentials: true // Ensure cookies are sent
+      });
+      setBiometricResult(res.data);
+
+      if (res.data.verified) {
+        setTimeout(() => setCurrentStep(4), 1500);
+      } else {
+        alert("Face verification failed. Please try again.");
+        setCapturedImage(null);
+        startCamera();
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Verification error");
+    }
+  };
+
+  const moveToBiometric = () => {
+    setCurrentStep(3);
+    setTimeout(startCamera, 500); // Auto start camera
   };
 
   return (
@@ -74,151 +245,294 @@ const KYCPage = () => {
 
       <div className="container-custom flex-1 grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-16 pb-16">
 
-        {/* Left Side - Inputs */}
+        {/* Left Side - Inputs & Results */}
         <div className="glass-panel p-10 h-fit">
           <h2 className="text-3xl font-bold mb-4">
             {steps[currentStep - 1]?.title}
           </h2>
           <p className="text-text-muted mb-8 text-lg">
-            Please complete the information below to proceed with verification.
+            {currentStep === 2 ? "Upload your documents for AI verification." :
+              currentStep === 3 ? "Take a selfie to verify against your documents." :
+                "Please complete the information below."}
           </p>
 
-          <form onSubmit={(e) => { e.preventDefault(); handleNext(); }}>
-            {/* Step 1 Content */}
+          <form onSubmit={(e) => { e.preventDefault(); }}>
+            {/* Step 1: Personal Info */}
             {currentStep === 1 && (
               <div className="flex flex-col gap-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block mb-2 text-sm font-medium">First Name</label>
-                    <input
-                      name="firstName"
-                      className="input-field"
-                      placeholder="John"
-                      value={personalInfo.firstName}
-                      onChange={handleInfoChange}
-                      required
-                    />
+                    <input name="firstName" className="input-field" value={personalInfo.firstName} onChange={handleInfoChange} required />
                   </div>
                   <div>
                     <label className="block mb-2 text-sm font-medium">Last Name</label>
-                    <input
-                      name="lastName"
-                      className="input-field"
-                      placeholder="Doe"
-                      value={personalInfo.lastName}
-                      onChange={handleInfoChange}
-                      required
-                    />
+                    <input name="lastName" className="input-field" value={personalInfo.lastName} onChange={handleInfoChange} required />
                   </div>
                 </div>
                 <div>
                   <label className="block mb-2 text-sm font-medium">Date of Birth</label>
-                  <input
-                    name="dateOfBirth"
-                    className="input-field"
-                    type="date"
-                    value={personalInfo.dateOfBirth}
-                    onChange={handleInfoChange}
-                    required
-                  />
+                  <input name="dateOfBirth" className="input-field" type="date" value={personalInfo.dateOfBirth} onChange={handleInfoChange} required />
                 </div>
                 <div>
                   <label className="block mb-2 text-sm font-medium">National ID Number</label>
-                  <input
-                    name="nationalIdNumber"
-                    className="input-field"
-                    placeholder="XXXX-XXXX-XXXX"
-                    value={personalInfo.nationalIdNumber}
-                    onChange={handleInfoChange}
-                    required
-                  />
+                  <input name="nationalIdNumber" className="input-field" placeholder="XXXX-XXXX-XXXX" value={personalInfo.nationalIdNumber} onChange={handleInfoChange} required />
+                </div>
+                <div className="flex justify-end mt-4">
+                  <button onClick={handlePersonalInfoSubmit} className="btn-primary flex items-center gap-2" disabled={authLoading}>
+                    {authLoading ? <Loader2 className="animate-spin" /> : <>Continue <ArrowRight size={18} /></>}
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* Step 2 Content */}
+            {/* Step 2: Document Verification */}
             {currentStep === 2 && (
-              <div className="flex flex-col gap-6">
-                <div>
-                  <label className="block mb-2 text-sm font-medium">Aadhaar Card</label>
-                  <div className="p-6 border-2 border-dashed border-border rounded-xl text-center hover:border-primary/50 transition-colors relative">
-                    <input
-                      type="file"
-                      name="aadhaar"
-                      onChange={handleFileChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      accept="image/*,application/pdf"
-                    />
-                    <Upload size={32} className="mx-auto mb-2 text-primary" />
-                    <p className="text-sm text-text-muted">{files.aadhaar ? files.aadhaar.name : "Click to Upload Aadhaar"}</p>
+              <div className="flex flex-col gap-8">
+                {/* Upload Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block mb-2 text-sm font-medium">Aadhaar Card</label>
+                    <div className="p-6 border-2 border-dashed border-border rounded-xl text-center hover:border-primary/50 transition-colors relative">
+                      <input type="file" name="aadhaar" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*,application/pdf" disabled={processingStage !== 'idle'} />
+                      <Upload size={32} className="mx-auto mb-2 text-primary" />
+                      <p className="text-sm text-text-muted">{files.aadhaar ? files.aadhaar.name : "Click to Upload Aadhaar"}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block mb-2 text-sm font-medium">PAN Card</label>
+                    <div className="p-6 border-2 border-dashed border-border rounded-xl text-center hover:border-primary/50 transition-colors relative">
+                      <input type="file" name="pan" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*,application/pdf" disabled={processingStage !== 'idle'} />
+                      <Upload size={32} className="mx-auto mb-2 text-primary" />
+                      <p className="text-sm text-text-muted">{files.pan ? files.pan.name : "Click to Upload PAN"}</p>
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block mb-2 text-sm font-medium">PAN Card</label>
-                  <div className="p-6 border-2 border-dashed border-border rounded-xl text-center hover:border-primary/50 transition-colors relative">
-                    <input
-                      type="file"
-                      name="pan"
-                      onChange={handleFileChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      accept="image/*,application/pdf"
-                    />
-                    <Upload size={32} className="mx-auto mb-2 text-primary" />
-                    <p className="text-sm text-text-muted">{files.pan ? files.pan.name : "Click to Upload PAN"}</p>
+                {/* API Responses Visualization */}
+                {(processingStage !== 'idle') && (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <h3 className="text-lg font-semibold border-b border-border pb-2">Analysis Results</h3>
+
+                    {/* OCR Data */}
+                    <div className={`p-4 rounded-lg border ${apiResponses.ocr && (apiResponses.ocr.aadhaar || apiResponses.ocr.pan) ? 'border-primary/30 bg-primary/5' : 'border-border bg-black/20'}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText size={18} className="text-primary" />
+                        <span className="font-medium">OCR Extraction Data</span>
+                        {(!apiResponses.ocr.aadhaar && !apiResponses.ocr.pan) && <Loader2 size={14} className="animate-spin text-text-muted" />}
+                      </div>
+                      {(apiResponses.ocr.aadhaar || apiResponses.ocr.pan) && (
+                        <div className="grid grid-cols-2 gap-4 text-xs text-text-muted">
+                          {apiResponses.ocr.aadhaar && (
+                            <pre className="overflow-auto bg-black/40 p-2 rounded max-h-40">{JSON.stringify(apiResponses.ocr.aadhaar, null, 2)}</pre>
+                          )}
+                          {apiResponses.ocr.pan && (
+                            <pre className="overflow-auto bg-black/40 p-2 rounded max-h-40">{JSON.stringify(apiResponses.ocr.pan, null, 2)}</pre>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Authenticity Result */}
+                    {(processingStage === 'authenticating' || processingStage === 'matching' || processingStage === 'complete') && (
+                      <div className={`p-4 rounded-lg border ${apiResponses.authenticity ? 'border-secondary/30 bg-secondary/5' : 'border-border bg-black/20'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <ShieldCheck size={18} className="text-secondary" />
+                          <span className="font-medium">Forgery Detection Report</span>
+                          {!apiResponses.authenticity && <Loader2 size={14} className="animate-spin text-text-muted" />}
+                        </div>
+                        {apiResponses.authenticity && (
+                          <pre className="text-xs text-text-muted overflow-auto max-h-40 bg-black/40 p-2 rounded">
+                            {JSON.stringify(apiResponses.authenticity, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Face Match Result */}
+                    {(processingStage === 'matching' || processingStage === 'complete') && (
+                      <div className={`p-4 rounded-lg border ${apiResponses.faceMatch ? 'border-accent/30 bg-accent/5' : 'border-border bg-black/20'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <ScanFace size={18} className="text-accent" />
+                          <span className="font-medium">Face Match Analysis (Aadhaar vs PAN)</span>
+                          {!apiResponses.faceMatch && <Loader2 size={14} className="animate-spin text-text-muted" />}
+                        </div>
+                        {apiResponses.faceMatch && (
+                          <pre className="text-xs text-text-muted overflow-auto max-h-40 bg-black/40 p-2 rounded">
+                            {JSON.stringify(apiResponses.faceMatch, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Cross Match Result */}
+                    {(apiResponses.crossMatch) && (
+                      <div className={`p-4 rounded-lg border ${apiResponses.crossMatch.nameMatch && apiResponses.crossMatch.dobMatch ? 'border-green-500/30 bg-green-500/5' : 'border-orange-500/30 bg-orange-500/5'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FileText size={18} className={apiResponses.crossMatch.nameMatch ? "text-green-500" : "text-orange-500"} />
+                          <span className="font-medium">Document Cross-Check</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="flex justify-between p-2 bg-black/20 rounded">
+                            <span className="text-text-muted">Name Match</span>
+                            <span className={apiResponses.crossMatch.nameMatch ? "text-green-400" : "text-red-400"}>
+                              {apiResponses.crossMatch.nameMatch ? "Pass" : "Fail"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between p-2 bg-black/20 rounded">
+                            <span className="text-text-muted">DOB Match</span>
+                            <span className={apiResponses.crossMatch.dobMatch ? "text-green-400" : "text-red-400"}>
+                              {apiResponses.crossMatch.dobMatch ? "Pass" : "Fail"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                )}
+
+                {/* Actions */}
+                <div className="mt-4 flex justify-end gap-4">
+                  {processingStage === 'idle' && (
+                    <button
+                      onClick={handleDocumentSubmit}
+                      className="btn-primary w-full"
+                    >
+                      Analyze Documents
+                    </button>
+                  )}
+
+                  {processingStage !== 'idle' && !canContinue && (
+                    <div className="flex items-center gap-3 text-text-muted bg-white/5 px-4 py-2 rounded-lg">
+                      <Loader2 className="animate-spin" size={18} />
+                      <span className="text-sm">Processing... Please wait</span>
+                    </div>
+                  )}
+
+                  {canContinue && (
+                    <button
+                      onClick={moveToBiometric}
+                      className="btn-primary animate-pulse"
+                    >
+                      Continue to Biometric
+                    </button>
+                  )}
                 </div>
               </div>
             )}
 
-            {/* Step 3 Content */}
+            {/* Step 3: Biometric */}
             {currentStep === 3 && (
               <div className="text-center">
-                <div className="w-[240px] h-[240px] bg-black mx-auto mb-8 rounded-2xl flex items-center justify-center border-2 border-primary shadow-[0_0_40px_rgba(0,242,254,0.15)]">
-                  <Camera size={48} className="text-text-muted" />
+                <div className="mb-6">
+                  <p className="text-text-muted mb-4">Please position your face in the camera frame.</p>
+                  <div className="relative w-[320px] h-[240px] bg-black mx-auto rounded-2xl overflow-hidden border-2 border-primary shadow-[0_0_40px_rgba(0,242,254,0.15)]">
+
+                    {!capturedImage ? (
+                      <>
+                        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover transform scale-x-[-1]" />
+                        {!cameraActive && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+                            <button onClick={startCamera} className="text-primary hover:text-white transition-colors">
+                              <Camera size={48} />
+                              <p className="text-xs mt-2">Enable Camera</p>
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <img src={URL.createObjectURL(capturedImage)} alt="Selfie" className="w-full h-full object-cover transform scale-x-[-1]" />
+                    )}
+
+                  </div>
                 </div>
-                <p className="mb-6 text-text-muted">Place your face inside the frame</p>
-                <button type="button" className="btn-primary" onClick={handleNext}>Start Verification</button>
+
+                {!capturedImage ? (
+                  <button type="button" className="btn-primary" onClick={capturePhoto} disabled={!cameraActive}>
+                    Capture Photo
+                  </button>
+                ) : (
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="flex gap-4">
+                      <button type="button" className="text-sm text-text-muted hover:text-white" onClick={() => { setCapturedImage(null); startCamera(); }}>Retake</button>
+                      <button type="button" className="btn-primary" onClick={handleBiometricSubmit}>Verify vs Aadhaar</button>
+                    </div>
+                    {biometricResult && (
+                      <div className={`mt-2 p-3 rounded text-sm ${biometricResult.verified ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {biometricResult.verified ? 'Verification Successful!' : 'Verification Failed. Try again.'}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Step 4 Content */}
+            {/* Step 4: Final */}
             {currentStep === 4 && (
               <div className="text-center py-8">
                 <CheckCircle size={64} className="mx-auto mb-6 text-secondary" />
-                <h3 className="text-2xl font-bold mb-3">Analysis in Progress</h3>
+                <h3 className="text-2xl font-bold mb-3">Verification Complete</h3>
                 <p className="text-text-muted text-lg">
-                  We are validating your documents and biometric data.
+                  All documents and biometrics have been verified successfully.
                 </p>
-              </div>
-            )}
-
-            {currentStep < 3 && (
-              <div className="mt-12 flex justify-end">
-                <button type="submit" className="btn-primary flex items-center gap-2" disabled={isLoading}>
-                  {isLoading ? (
-                    <>Processing <Loader2 className="animate-spin" size={18} /></>
-                  ) : (
-                    <>Continue <ArrowRight size={18} /></>
-                  )}
-                </button>
               </div>
             )}
 
           </form>
         </div>
 
-        {/* Right Side - Progress Bar / AI Steps */}
+        {/* Right Side - Process Sidebar */}
         <div className="pl-4 lg:pl-0">
-          <h3 className="text-xl font-semibold mb-8">Verification Status</h3>
+          {/* Real-time Analysis Widget */}
+          <div className="glass-panel p-6 mb-8">
+            <h4 className="text-sm font-semibold text-text-muted mb-4 uppercase tracking-wider flex items-center gap-2">
+              <Server size={14} /> Real-time Analysis
+            </h4>
 
+            <div className="space-y-4">
+              <div className="flex justify-between items-center text-sm">
+                <span className={processingStage === 'uploading' || processingStage === 'ocr' || processingStage === 'authenticating' || processingStage === 'matching' || processingStage === 'complete' ? 'text-white' : 'text-text-muted'}>
+                  Document Upload
+                </span>
+                {processingStage === 'uploading' ? <Loader2 size={14} className="animate-spin text-primary" /> :
+                  (processingStage !== 'idle' ? <CheckCircle size={14} className="text-[#00ffaa]" /> : <div className="w-3 h-3 rounded-full bg-border" />)}
+              </div>
+
+              <div className="flex justify-between items-center text-sm">
+                <span className={processingStage === 'ocr' || processingStage === 'authenticating' || processingStage === 'matching' || processingStage === 'complete' ? 'text-white' : 'text-text-muted'}>
+                  Text Extraction (OCR)
+                </span>
+                {processingStage === 'ocr' ? <Loader2 size={14} className="animate-spin text-primary" /> :
+                  ((processingStage === 'authenticating' || processingStage === 'matching' || processingStage === 'complete') ? <CheckCircle size={14} className="text-[#00ffaa]" /> : <div className="w-3 h-3 rounded-full bg-border" />)}
+              </div>
+
+              <div className="flex justify-between items-center text-sm">
+                <span className={processingStage === 'authenticating' || processingStage === 'matching' || processingStage === 'complete' ? 'text-white' : 'text-text-muted'}>
+                  Forgery Detection (8002)
+                </span>
+                {processingStage === 'authenticating' ? <Loader2 size={14} className="animate-spin text-secondary" /> :
+                  ((processingStage === 'matching' || processingStage === 'complete') ? <CheckCircle size={14} className="text-[#00ffaa]" /> : <div className="w-3 h-3 rounded-full bg-border" />)}
+              </div>
+
+              <div className="flex justify-between items-center text-sm">
+                <span className={processingStage === 'matching' || processingStage === 'complete' ? 'text-white' : 'text-text-muted'}>
+                  Face Matching (8003)
+                </span>
+                {processingStage === 'matching' ? <Loader2 size={14} className="animate-spin text-accent" /> :
+                  (processingStage === 'complete' ? <CheckCircle size={14} className="text-[#00ffaa]" /> : <div className="w-3 h-3 rounded-full bg-border" />)}
+              </div>
+            </div>
+          </div>
+
+          <h3 className="text-xl font-semibold mb-6">Verification Steps</h3>
           <div className="flex flex-col">
             {steps.map((step, index) => {
               const isActive = index + 1 === currentStep;
               const isCompleted = index + 1 < currentStep;
 
               return (
-                <div key={step.id} className="flex gap-4 min-h-[100px] relative">
+                <div key={step.id} className="flex gap-4 min-h-[80px] relative">
                   {/* Timeline Line */}
                   {index !== steps.length - 1 && (
                     <div className={`absolute left-[15px] top-[34px] bottom-[-20px] w-[2px] ${isCompleted ? 'bg-primary' : 'bg-border'}`} />
@@ -233,30 +547,11 @@ const KYCPage = () => {
                   {/* Text */}
                   <div className={`pt-1 transition-opacity duration-300 ${isActive || isCompleted ? 'opacity-100' : 'opacity-40'}`}>
                     <h4 className="text-base font-bold">{step.title}</h4>
-                    <p className="text-sm text-text-muted mt-1">
-                      {isActive && isLoading ? 'Processing...' : step.desc}
-                    </p>
-                    {isActive && isLoading && (
-                      <div className="h-1 w-[120px] bg-white/10 mt-3 rounded-full overflow-hidden">
-                        <div className="h-full bg-primary w-[60%] animate-[progress_1s_infinite_linear]" />
-                      </div>
-                    )}
+                    <p className="text-sm text-text-muted mt-1">{step.desc}</p>
                   </div>
                 </div>
               );
             })}
-          </div>
-
-          <div className="glass-panel mt-8 p-6">
-            <h4 className="text-sm font-semibold text-text-muted mb-4 uppercase tracking-wider">System Status</h4>
-            <div className="flex justify-between text-sm mb-3">
-              <span>Face Engine</span>
-              <span className="text-[#00ffaa] flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-[#00ffaa] animate-pulse" /> Online</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Liveness Check</span>
-              <span className="text-[#00ffaa] flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-[#00ffaa] animate-pulse" /> Active</span>
-            </div>
           </div>
         </div>
 
