@@ -3,12 +3,15 @@ import { Upload, CheckCircle, Smartphone, Camera, Loader2, ArrowRight, ShieldChe
 import useAuthStore from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import FaceLiveness from '../components/biometric/FaceLiveness';
+import VoiceVerification from '../components/biometric/VoiceVerification';
 
 const steps = [
   { id: 1, title: 'Personal Info', desc: 'Enter your basic details' },
   { id: 2, title: 'Document Verification', desc: 'Upload & Validate IDs' },
-  { id: 3, title: 'Biometric Scan', desc: 'Face verification' },
-  { id: 4, title: 'AI Analysis', desc: 'Final Validation' }
+  { id: 3, title: 'Face Scan', desc: 'Liveness check' },
+  { id: 4, title: 'Voice Verify', desc: 'Audio identity check' },
+  { id: 5, title: 'AI Analysis', desc: 'Final Validation' }
 ];
 
 const KYCPage = () => {
@@ -180,7 +183,7 @@ const KYCPage = () => {
   const videoRef = React.useRef(null);
   const [cameraActive, setCameraActive] = React.useState(false);
   const [capturedImage, setCapturedImage] = React.useState(null);
-  const [biometricResult, setBiometricResult] = React.useState(null);
+  const [biometricResult, setBiometricResult] = React.useState({});
 
   const startCamera = async () => {
     try {
@@ -424,52 +427,59 @@ const KYCPage = () => {
 
             {/* Step 3: Biometric */}
             {currentStep === 3 && (
-              <div className="text-center">
+              <div className="text-center w-full">
                 <div className="mb-6">
-                  <p className="text-text-muted mb-4">Please position your face in the camera frame.</p>
-                  <div className="relative w-[320px] h-[240px] bg-black mx-auto rounded-2xl overflow-hidden border-2 border-primary shadow-[0_0_40px_rgba(0,242,254,0.15)]">
+                  <p className="text-text-muted mb-4 uppercase tracking-widest text-sm font-semibold">Stage 1: Liveness Check</p>
 
-                    {!capturedImage ? (
-                      <>
-                        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover transform scale-x-[-1]" />
-                        {!cameraActive && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-                            <button onClick={startCamera} className="text-primary hover:text-white transition-colors">
-                              <Camera size={48} />
-                              <p className="text-xs mt-2">Enable Camera</p>
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <img src={URL.createObjectURL(capturedImage)} alt="Selfie" className="w-full h-full object-cover transform scale-x-[-1]" />
-                    )}
+                  <FaceLiveness
+                    sessionId={user?._id || 'temp-session'}
+                    onComplete={(result) => {
+                      console.log("Face Scan Complete:", result);
+                      setBiometricResult(prev => ({ ...prev, face: result }));
+                      setTimeout(() => {
+                        setCurrentStep(4);
+                      }, 1500);
+                    }}
+                  />
 
-                  </div>
-                </div>
-
-                {!capturedImage ? (
-                  <button type="button" className="btn-primary" onClick={capturePhoto} disabled={!cameraActive}>
-                    Capture Photo
-                  </button>
-                ) : (
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="flex gap-4">
-                      <button type="button" className="text-sm text-text-muted hover:text-white" onClick={() => { setCapturedImage(null); startCamera(); }}>Retake</button>
-                      <button type="button" className="btn-primary" onClick={handleBiometricSubmit}>Verify vs Aadhaar</button>
+                  {biometricResult?.face && (
+                    <div className="mt-4 p-3 bg-green-500/20 text-green-400 rounded-lg animate-in slide-in-from-bottom-2 fade-in">
+                      Face Verification Passed: {biometricResult.face.liveness_percentage}% Confidence
                     </div>
-                    {biometricResult && (
-                      <div className={`mt-2 p-3 rounded text-sm ${biometricResult.verified ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                        {biometricResult.verified ? 'Verification Successful!' : 'Verification Failed. Try again.'}
-                      </div>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Step 4: Final */}
+            {/* Step 4: Voice Verify */}
             {currentStep === 4 && (
+              <div className="text-center w-full">
+                <div className="mb-6">
+                  <p className="text-text-muted mb-4 uppercase tracking-widest text-sm font-semibold">Stage 2: Voice Verification</p>
+
+                  <VoiceVerification
+                    sessionId={user?._id || 'temp-session'}
+                    onComplete={(result) => {
+                      console.log("Voice Verify Complete:", result);
+                      setBiometricResult(prev => ({ ...prev, voice: result }));
+                      setTimeout(() => {
+                        setCurrentStep(5);
+                        setProcessingStage('complete');
+                      }, 1500);
+                    }}
+                  />
+
+                  {biometricResult?.voice && (
+                    <div className="mt-4 p-3 bg-green-500/20 text-green-400 rounded-lg animate-in slide-in-from-bottom-2 fade-in">
+                      Voice Signature Confirmed
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Step 5: Final */}
+            {currentStep === 5 && (
               <div className="text-center py-8">
                 <CheckCircle size={64} className="mx-auto mb-6 text-secondary" />
                 <h3 className="text-2xl font-bold mb-3">Verification Complete</h3>

@@ -6,6 +6,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import kycRoutes from './routes/kycRoutes.js';
 import botRoutes from './routes/botRoutes.js';
+import biometricRoutes from './routes/biometricRoutes.js';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.use(cors(corsOptions));
 app.use('/api/users', authRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/bot-detection', botRoutes);
+app.use('/api/biometric', biometricRoutes);
 
 app.get('/', (req, res) => {
   res.send('API is running...');

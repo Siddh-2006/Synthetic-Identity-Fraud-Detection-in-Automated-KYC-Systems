@@ -31,4 +31,26 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage: storage, fileFilter: fileFilter });
 
-export { cloudinary, upload };
+import streamifier from 'streamifier';
+
+const uploadStream = (buffer, folder, resource_type = 'auto') => {
+    return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+            { folder, resource_type },
+            (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+            }
+        );
+        streamifier.createReadStream(buffer).pipe(stream);
+    });
+};
+
+const uploadBase64 = async (base64Str, folder) => {
+    const result = await cloudinary.uploader.upload(`data:image/jpeg;base64,${base64Str}`, {
+        folder
+    });
+    return result;
+};
+
+export { cloudinary, upload, uploadStream, uploadBase64 };
