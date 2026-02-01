@@ -39,6 +39,23 @@ const kycSchema = new mongoose.Schema({
     dobMatch: { type: Boolean, default: false },
     genderMatch: { type: Boolean, default: false }
   },
+  profileMatch: {
+    nameMatch: { type: Boolean, default: false },
+    dobMatch: { type: Boolean, default: false }
+  },
+  livenessCheck: {
+    movementPassed: { type: Boolean, default: false },
+    score: { type: Number },
+    spoofRisk: { type: Number },
+    livenessScore: { type: Number },
+    processedAt: { type: Date }
+  },
+  voiceCheck: {
+    phraseMatch: { type: Boolean, default: false },
+    transcription: { type: String },
+    mediaUrl: { type: String },
+    processedAt: { type: Date }
+  },
   status: {
     type: String,
     enum: ['pending', 'verified', 'rejected', 'failed'],

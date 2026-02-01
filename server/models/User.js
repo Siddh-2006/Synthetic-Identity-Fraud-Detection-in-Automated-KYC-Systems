@@ -32,6 +32,11 @@ const userSchema = new mongoose.Schema({
   verificationStep: {
     type: Number,
     default: 1
+  },
+  botDetectionResult: {
+    prediction: String,
+    confidence: Number,
+    analyzedAt: Date
   }
 }, {
   timestamps: true

@@ -4,6 +4,14 @@ import BiometricAttempt from '../models/BiometricAttempt.js';
 import { analyzeVideo, processVoice } from '../services/biometricService.js';
 import { validateMovement } from '../services/movementValidator.js';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import path from 'path';
+
+const debugLog = (msg) => {
+    const logPath = path.join(process.cwd(), 'biometric_debug.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logPath, `[${timestamp}] ${msg}\n`);
+};
 
 
 
@@ -74,30 +82,48 @@ export const initiateChallenge = async (req, res) => {
 // @desc    Submit Face Video
 // @route   POST /api/biometric/face/submit
 export const submitFace = async (req, res) => {
+    const logPrefix = `[FaceSubmit][${new Date().toISOString()}]`;
     try {
         const { session_id, challenge_id } = req.body;
-        const videoFile = req.file; // Assuming 'video_file'
+        const videoFile = req.file;
 
+        debugLog(`${logPrefix} Incoming: session_id=${session_id}, challenge_id=${challenge_id}, file=${!!videoFile}`);
+        console.log(`[FaceSubmit] Incoming session: ${session_id}`);
+        
         if (!session_id || !challenge_id || !videoFile) {
-            return res.status(400).json({ error: 'Missing required fields' });
+            return res.status(400).json({ error: 'Missing required fields', details: { session_id: !!session_id, challenge_id: !!challenge_id, videoFile: !!videoFile } });
         }
 
-        console.log(`[FaceSubmit] Processing session ${session_id}...`);
-
         // 1. Upload original video
-        const tempVideo = await uploadStream(videoFile.buffer, `biometric_sessions/${session_id}`, 'video');
+        debugLog(`${logPrefix} Step 1: Uploading video to Cloudinary...`);
+        let tempVideo;
+        try {
+            tempVideo = await uploadStream(videoFile.buffer, `biometric_sessions/${session_id}`, 'video');
+            debugLog(`${logPrefix} Step 1 Success: ${tempVideo.secure_url}`);
+        } catch (err) {
+            debugLog(`${logPrefix} Step 1 FAILED: ${err.message}`);
+            return res.status(400).json({ error: 'Cloudinary Upload Failed', details: err.message });
+        }
 
         // 2. Video Analysis
-        console.log(`[FaceSubmit] Step 2: Requesting video analysis from Python service...`);
-        const analysisResult = await analyzeVideo(videoFile.buffer);
+        debugLog(`${logPrefix} Step 2: Requesting video analysis from Python service...`);
+        let analysisResult;
+        try {
+            analysisResult = await analyzeVideo(videoFile.buffer);
+            debugLog(`${logPrefix} Step 2 Success: face_detected=${analysisResult.face_detected}`);
+            console.log(`[FaceSubmit] Analysis complete. Face Detected: ${analysisResult.face_detected}`);
+        } catch (err) {
+            debugLog(`${logPrefix} Step 2 FAILED: ${err.message}`);
+            return res.status(502).json({ error: `CV Service Error: ${err.message}` });
+        }
 
         if (analysisResult.error) {
-            console.error(`[FaceSubmit] CV Service Error:`, analysisResult.error);
+            debugLog(`${logPrefix} CV Service reported error: ${analysisResult.error}`);
             return res.status(502).json({ error: `CV Service Error: ${analysisResult.error}` });
         }
 
         if (!analysisResult.face_detected) {
-            console.warn(`[FaceSubmit] No face detected in video.`);
+            debugLog(`${logPrefix} No face detected in video.`);
             return res.status(422).json({
                 status: 'retry',
                 reason: 'No face detected in video. Ensure your face is clearly visible.',
@@ -106,16 +132,21 @@ export const submitFace = async (req, res) => {
         }
 
         // 3. Movement Validation
+        debugLog(`${logPrefix} Step 3: Movement Check...`);
         const session = await BiometricSession.findOne({ session_id });
-        const target = session?.challenge?.target_coords || { x: 0.5, y: 0.5 };
+        if (!session) {
+            debugLog(`${logPrefix} Session NOT FOUND for ID: ${session_id}`);
+            return res.status(404).json({ error: 'Session not found. Please restart verification.' });
+        }
+
+        const target = session.challenge?.target_coords || { x: 0.5, y: 0.5 };
         const movementResult = validateMovement(analysisResult.landmarks_sequence, target);
 
-        console.log(`[FaceSubmit] Step 3: Movement Check for ${session_id}`);
-        console.log(` >> Target: x=${target.x}, y=${target.y}`);
-        console.log(` >> Result: distance=${movementResult.distance?.toFixed(4)}, passed=${movementResult.passed}`);
+        debugLog(`${logPrefix} Step 3 Results: distance=${movementResult.distance?.toFixed(4)}, passed=${movementResult.passed}`);
+        console.log(`[FaceSubmit] Movement Match: ${movementResult.passed} (Distance: ${movementResult.distance?.toFixed(4)})`);
 
         if (!movementResult.passed) {
-             console.warn(`[FaceSubmit] Movement validation failed (Distance > 0.30)`);
+             debugLog(`${logPrefix} Movement validation failed.`);
              await BiometricAttempt.create({
                  session_id, challenge_id,
                  movement_score: movementResult.score,
@@ -130,11 +161,12 @@ export const submitFace = async (req, res) => {
         }
 
         // 4. Anti-Spoof
-        console.log(`[FaceSubmit] Step 4: Spoof Check for ${session_id}`);
-        console.log(` >> Liveness: ${analysisResult.liveness_percentage}%`);
-
+        debugLog(`${logPrefix} Step 4: Spoof Check...`);
+        console.log(`[FaceSubmit] Anti-Spoof Score: ${analysisResult.spoof_score?.toFixed(4)} (Threshold: < 0.5)`);
+        
         if (analysisResult.is_spoof) {
-            console.warn(`[FaceSubmit] Anti-spoofing detection triggered! (Score: ${analysisResult.spoof_score})`);
+            debugLog(`${logPrefix} Spoof detected! Score: ${analysisResult.spoof_score}`);
+            console.log(`[FaceSubmit] SPOOF DETECTED! Liveness: ${analysisResult.liveness_percentage || 0}%`);
             await BiometricAttempt.create({
                 session_id, challenge_id,
                 movement_score: movementResult.score,
@@ -151,7 +183,7 @@ export const submitFace = async (req, res) => {
         }
 
         // 5. Upload Verified Frames
-        console.log(`[FaceSubmit] Step 5: Uploading ${analysisResult.verified_frames_b64?.length || 0} verified frames...`);
+        debugLog(`${logPrefix} Step 5: Uploading verified frames...`);
         const verifiedFrameUrls = [];
         if (analysisResult.verified_frames_b64) {
             for (const b64 of analysisResult.verified_frames_b64) {
@@ -161,6 +193,7 @@ export const submitFace = async (req, res) => {
         }
 
         // 6. Store Successful Attempt
+        debugLog(`${logPrefix} Step 6: Storing successful attempt...`);
         await BiometricAttempt.create({
             session_id,
             challenge_id,
@@ -172,6 +205,7 @@ export const submitFace = async (req, res) => {
         });
 
         // 7. Update Session
+        debugLog(`${logPrefix} Step 7: Updating session...`);
         await BiometricSession.findOneAndUpdate(
             { session_id },
             {
@@ -187,18 +221,40 @@ export const submitFace = async (req, res) => {
             }
         );
 
+        // 8. ALSO Store in Kyc Model (Persistent Record)
+        // Find user by session_id (which is often req.user._id in the frontend)
+        const userKyc = await Kyc.findOne({ 
+            $or: [
+                { user: session_id }, // If session_id is userId
+                { user: req.user?._id } // Fallback to auth user
+            ]
+        });
+
+        if (userKyc) {
+            userKyc.livenessCheck = {
+                movementPassed: movementResult.passed,
+                score: movementResult.score,
+                spoofRisk: 1 - (analysisResult.spoof_score || 0),
+                livenessScore: analysisResult.spoof_score,
+                processedAt: new Date()
+            };
+            await userKyc.save();
+            console.log(`[FaceSubmit] Persisted liveness results to Kyc record for user.`);
+        }
+
         res.json({
             status: 'success',
             movement_score: movementResult.score,
             spoof_score: analysisResult.spoof_score,
             liveness_percentage: analysisResult.liveness_percentage,
             liveness_signals: analysisResult.liveness_signals,
-            debug_face_count: analysisResult.debug_face_count,
             verified_frames: verifiedFrameUrls,
             message: 'Biometric verification passed'
         });
+        console.log(`[FaceSubmit] Verification SUCCESS for session ${session_id}`);
 
     } catch (error) {
+        debugLog(`${logPrefix} GLOBAL ERROR: ${error.message} \n ${error.stack}`);
         console.error('[FaceSubmit] Error:', error);
         res.status(500).json({ error: error.message });
     }
@@ -234,6 +290,25 @@ export const submitVoice = async (req, res) => {
                 }
             }
         );
+
+        // 8. ALSO Store in Kyc Model
+        const userKycVoice = await Kyc.findOne({ 
+            $or: [
+                { user: session_id },
+                { user: req.user?._id }
+            ]
+        });
+
+        if (userKycVoice) {
+            userKycVoice.voiceCheck = {
+                phraseMatch: voiceResult.phrase_match,
+                transcription: voiceResult.transcription,
+                mediaUrl: audioUrl,
+                processedAt: new Date()
+            };
+            await userKycVoice.save();
+            console.log(`[VoiceSubmit] Persisted voice results to Kyc record.`);
+        }
 
         res.json({
             message: 'Voice analysis completed',

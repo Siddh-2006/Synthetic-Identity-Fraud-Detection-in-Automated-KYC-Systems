@@ -55,8 +55,10 @@ class BotSimulator:
         }
 
 if __name__ == "__main__":
-    PROCESSED_DIR = "c:\\Users\\shah siddh\\Downloads\\web_bot_detection_dataset\\processed_data"
-    MODEL_PATH = "c:\\Users\\shah siddh\\Downloads\\web_bot_detection_dataset\\model_artifacts\\xgb_model.pkl"
+    # Corrected local paths
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    PROCESSED_DIR = os.path.join(BASE_DIR, "backend", "artifacts")
+    MODEL_PATH = os.path.join(PROCESSED_DIR, "xgb_model.pkl")
     
     simulator = BotSimulator(PROCESSED_DIR, MODEL_PATH)
     

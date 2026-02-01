@@ -34,12 +34,22 @@ const upload = multer({ storage: storage, fileFilter: fileFilter });
 import streamifier from 'streamifier';
 
 const uploadStream = (buffer, folder, resource_type = 'auto') => {
+    console.log(`[Cloudinary] Uploading to folder: ${folder}, type: ${resource_type}, size: ${buffer.length} bytes`);
     return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
-            { folder, resource_type },
+            { 
+              folder, 
+              resource_type,
+              public_id: `${Date.now()}` 
+            },
             (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
+                if (error) {
+                    console.error(`[Cloudinary] Upload Error:`, error.message);
+                    reject(error);
+                } else {
+                    console.log(`[Cloudinary] Upload Success: ${result.secure_url}`);
+                    resolve(result);
+                }
             }
         );
         streamifier.createReadStream(buffer).pipe(stream);

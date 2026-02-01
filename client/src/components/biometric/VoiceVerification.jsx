@@ -189,36 +189,56 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
     };
 
     return (
-        <div className="w-full max-w-md mx-auto p-8 bg-slate-900 rounded-2xl border border-white/10 text-center backdrop-blur-sm">
-            <h2 className="text-xl font-semibold mb-4 text-indigo-400">
-                Audio Identity Check
+        <div className="w-full max-w-xl mx-auto p-10 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-xl text-center animate-slide-in">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-secondary mb-8">
+                Biometric Stage 2: Voice Print
             </h2>
 
-            <div className="flex items-center justify-center h-20 my-6 bg-black/20 rounded-2xl">
-                {status === 'recording' ? (
-                    <div className="animate-pulse text-red-500">
-                        <Mic size={32} />
+            <div className="flex items-center justify-center h-32 my-8 bg-black/40 rounded-3xl border border-white/5 relative overflow-hidden group">
+                {status === 'recording' && (
+                    <div className="absolute inset-0 flex items-center justify-center gap-1">
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                            <div key={i} className="w-1 bg-secondary rounded-full animate-pulse" style={{
+                                height: `${Math.random() * 60 + 20}%`,
+                                animationDelay: `${i * 0.1}s`
+                            }} />
+                        ))}
                     </div>
-                ) : status === 'processing' ? (
-                    <Loader2 size={32} className="animate-spin text-indigo-400" />
-                ) : status === 'completed' ? (
-                    <CheckCircle size={32} className="text-green-400" />
-                ) : (
-                    <MicOff size={32} className="opacity-30 text-white" />
                 )}
+
+                <div className="relative z-10">
+                    {status === 'recording' ? (
+                        <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center border-2 border-red-500 animate-pulse">
+                            <Mic size={32} className="text-red-500" />
+                        </div>
+                    ) : status === 'processing' ? (
+                        <div className="w-16 h-16 bg-secondary/20 rounded-full flex items-center justify-center border-2 border-secondary animate-spin">
+                            <Loader2 size={32} className="text-secondary" />
+                        </div>
+                    ) : status === 'completed' ? (
+                        <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center border-2 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+                            <CheckCircle size={32} className="text-[#00ffaa]" />
+                        </div>
+                    ) : (
+                        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center border border-white/10 group-hover:border-secondary transition-colors duration-500">
+                            <MicOff size={32} className="opacity-30 text-white" />
+                        </div>
+                    )}
+                </div>
             </div>
 
             {challenge && status !== 'completed' && (
-                <div className="mb-6">
-                    <p className="text-slate-400 text-sm mb-2">Please say the phrase clearly:</p>
-                    <div className="text-xl font-bold text-slate-100 p-4 bg-white/5 rounded-lg border border-white/5">
+                <div className="mb-10 space-y-4">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Secure Passphrase</p>
+                    <div className="text-3xl font-black text-white p-8 bg-white/5 rounded-2xl border border-white/5 shadow-inner leading-relaxed">
                         "{challenge.voice_phrase}"
                     </div>
+                    <p className="text-xs text-text-muted italic opacity-60">Please read the phrase clearly into your microphone</p>
                 </div>
             )}
 
             {errorMessage && (
-                <div className="text-red-400 text-sm mb-4 flex items-center justify-center gap-2">
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs font-bold mb-6 flex items-center justify-center gap-3">
                     <AlertCircle size={16} />
                     {errorMessage}
                 </div>
@@ -227,24 +247,36 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
             {status === 'ready' && (
                 <button
                     onClick={startRecording}
-                    className="w-full py-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-bold transition-colors"
+                    className="btn-primary w-full py-4 uppercase font-black tracking-widest text-xs flex items-center justify-center gap-3"
                 >
-                    Start Voice Check
+                    <Mic size={18} />
+                    Initialize Voice Print
                 </button>
             )}
 
             {status === 'recording' && (
-                <div className="font-bold text-red-400">
-                    Recording... {countdown}s
+                <div className="flex flex-col items-center gap-2">
+                    <div className="font-black text-2xl text-red-500 tracking-tighter">
+                        CAPTURING {countdown}s
+                    </div>
+                    <p className="text-[10px] uppercase font-bold text-text-muted">Do note speak too fast</p>
                 </div>
             )}
 
             {status === 'processing' && (
-                <p className="text-indigo-400 text-sm">Analyzing your secure voice print...</p>
+                <div className="space-y-2">
+                    <p className="text-secondary text-sm font-black uppercase tracking-widest animate-pulse">Analyzing Neural Voice Frequencies...</p>
+                    <div className="w-48 h-1 bg-white/10 mx-auto rounded-full overflow-hidden">
+                        <div className="h-full bg-secondary animate-progress" />
+                    </div>
+                </div>
             )}
 
             {status === 'completed' && (
-                <p className="text-green-400 font-bold">Voice Verified Successfully!</p>
+                <div className="space-y-1 animate-in slide-in-from-bottom-2 duration-500">
+                    <p className="text-[#00ffaa] font-black uppercase tracking-widest text-lg">Identity Signature Verified</p>
+                    <p className="text-text-muted text-xs">Biometric verification stage complete</p>
+                </div>
             )}
         </div>
     );

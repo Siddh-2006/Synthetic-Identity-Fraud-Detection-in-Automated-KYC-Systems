@@ -16,6 +16,7 @@ export const analyzeVideo = async (videoBuffer) => {
             },
         });
 
+        console.log(`[BiometricService] Python Analysis Result:`, JSON.stringify(response.data));
         return response.data;
     } catch (error) {
         console.error(`[BiometricService] Error analyzing video:`, error.message);

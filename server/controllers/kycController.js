@@ -1,23 +1,36 @@
 import User from '../models/User.js';
 import { cloudinary } from '../config/cloudinary.js';
 import fs from 'fs';
+import Kyc from '../models/Kyc.js';
+import BiometricSession from '../models/BiometricSession.js';
 
 // @desc    Update personal info (Step 1)
 // @route   POST /api/kyc/info
 // @access  Private
 const updatePersonalInfo = async (req, res) => {
-  const { firstName, lastName, dateOfBirth, nationalIdNumber } = req.body;
+  const { firstName, lastName, dateOfBirth, nationalIdNumber, botResult } = req.body;
 
   try {
     const user = await User.findById(req.user._id);
 
     if (user) {
+      console.log(`[KYC] Updating personal info for: ${user.email}`);
       user.name = `${firstName} ${lastName}`;
       user.dateOfBirth = dateOfBirth;
       user.nationalIdNumber = nationalIdNumber;
       user.verificationStep = 2; // Move to next step
 
+      if (botResult) {
+        console.log(`[KYC] Bot Detection result received: ${botResult.prediction} (Conf: ${botResult.confidence})`);
+        user.botDetectionResult = {
+          prediction: botResult.prediction,
+          confidence: botResult.confidence,
+          analyzedAt: new Date()
+        };
+      }
+
       const updatedUser = await user.save();
+      console.log(`[KYC] Personal info updated successfully.`);
 
       res.json({
          _id: updatedUser._id,
@@ -65,6 +78,10 @@ const uploadDocuments = async (req, res) => {
     aadhaarLocalPath = files.aadhaar[0].path;
     panLocalPath = files.pan[0].path;
     
+    console.log(`[KYC] Starting processing for user: ${user.email}`);
+    console.log(`[KYC] Aadhaar Path: ${aadhaarLocalPath}`);
+    console.log(`[KYC] PAN Path: ${panLocalPath}`);
+    
     // Notify start
     res.write(JSON.stringify({ type: 'start', message: 'Processing started' }) + '\n');
 
@@ -73,6 +90,7 @@ const uploadDocuments = async (req, res) => {
       cloudinary.uploader.upload(aadhaarLocalPath),
       cloudinary.uploader.upload(panLocalPath)
     ]).then(([aadhaarUpload, panUpload]) => {
+        console.log(`[KYC] Uploads complete. Aadhaar: ${aadhaarUpload.secure_url}, PAN: ${panUpload.secure_url}`);
         user.aadhaarUrl = aadhaarUpload.secure_url;
         user.panUrl = panUpload.secure_url;
         res.write(JSON.stringify({ 
@@ -85,17 +103,20 @@ const uploadDocuments = async (req, res) => {
 
     // 2. OCR Extraction
     const aadhaarOcrPromise = extractAadhaar(aadhaarLocalPath).then(data => {
+        console.log(`[KYC] Aadhaar OCR Complete:`, JSON.stringify(data.data));
         res.write(JSON.stringify({ type: 'ocr_aadhaar', data: data.data }) + '\n');
         return data;
     });
     
     const panOcrPromise = extractPan(panLocalPath).then(data => {
+        console.log(`[KYC] PAN OCR Complete:`, JSON.stringify(data.data));
         res.write(JSON.stringify({ type: 'ocr_pan', data: data.data }) + '\n');
         return data;
     });
 
     // 3. Fraud Detection
     const fraudPromise = detectFraud(aadhaarLocalPath).then(data => {
+        console.log(`[KYC] Fraud Detection Result:`, JSON.stringify(data));
         res.write(JSON.stringify({ type: 'fraud_check', data }) + '\n');
         return data;
     });
@@ -107,13 +128,15 @@ const uploadDocuments = async (req, res) => {
     
     const faceMatchPromise = Promise.all([aadhaarFacePromise, panFacePromise])
         .then(async ([aadhaarFace, panFace]) => {
+             console.log(`[KYC] Face extraction complete. AadhaarFace: ${!!aadhaarFace}, PANFace: ${!!panFace}`);
              // We can signal extraction complete if we want, but user cares about match
              if (aadhaarFace && panFace) {
                  const matchResult = await verifyFace(aadhaarFace, panFace);
+                 console.log(`[KYC] Face Match Result:`, JSON.stringify(matchResult));
                  res.write(JSON.stringify({ type: 'face_match', data: matchResult }) + '\n');
                  return { matchResult, aadhaarFace, panFace }; // Return faces for later if needed?
              }
-             return { matchResult: { verified: false }, aadhaarFace, panFace };
+             return { matchResult: { verified: false, distance: 1.0 }, aadhaarFace, panFace };
         });
 
     // Wait for all critical parts to finish to save DB
@@ -163,9 +186,16 @@ const uploadDocuments = async (req, res) => {
         dobMatch: normalizeText(aadharDob) === normalizeText(panDob),
         genderMatch: normalizeText(aadharGender) === normalizeText(panGender)
     };
+
+    const profileMatch = {
+        nameMatch: normalizeText(user.name) === normalizeText(aadharName) || normalizeText(user.name) === normalizeText(panName),
+        dobMatch: normalizeText(user.dateOfBirth?.toISOString().split('T')[0]) === normalizeText(aadharDob) || normalizeText(user.dateOfBirth?.toISOString().split('T')[0]) === normalizeText(panDob)
+    };
     
-    console.log("Cross Match Result:", crossMatch);
-    console.log("-------------------------");
+    console.log("[KYC] Cross Match Results:");
+    console.log(` - Name Match (Aadhaar/PAN): ${crossMatch.nameMatch} ('${aadharName}' vs '${panName}')`);
+    console.log(` - Profile Name Match: ${profileMatch.nameMatch} ('${user.name}' vs IDs)`);
+    console.log(` - DOB Match: ${crossMatch.dobMatch}`);
     
     // Notify Frontend of Cross Match
     res.write(JSON.stringify({ type: 'cross_match', data: crossMatch }) + '\n');
@@ -201,7 +231,8 @@ const uploadDocuments = async (req, res) => {
             verified: faceData.matchResult.verified
         },
         AadharPanMatch: crossMatch,
-        status: (fraudData.verdict === 'Real' && faceData.matchResult.verified) ? 'verified' : 'pending' 
+        profileMatch: profileMatch,
+        status: (fraudData.verdict === 'Real' && faceData.matchResult.verified && profileMatch.nameMatch) ? 'verified' : 'pending' 
     });
 
     // 6. Update User Status
@@ -213,10 +244,42 @@ const uploadDocuments = async (req, res) => {
     }
     await user.save();
 
+    // 7. Final Consensus Analysis
+    const consensus = {
+        identity: {
+            aadhaarMatch: crossMatch.nameMatch && crossMatch.dobMatch,
+            panMatch: crossMatch.nameMatch && crossMatch.dobMatch,
+            overallCrossMatch: crossMatch.nameMatch && crossMatch.dobMatch,
+            profileConsistency: profileMatch.nameMatch && profileMatch.dobMatch
+        },
+        integrity: {
+            aadhaarForgery: fraudData.verdict,
+            faceMatch: faceData.matchResult.verified,
+            faceDistance: faceData.matchResult.distance,
+            botDetection: user.botDetectionResult?.prediction || "N/A"
+        },
+        verdict: (fraudData.verdict === 'Real' && faceData.matchResult.verified && profileMatch.nameMatch) ? 'TRUSTED' : 'SUSPICIOUS'
+    };
+
+    console.log("\n" + "="*50);
+    console.log("       🏁 FINAL KYC CONSENSUS ANALYSIS 🏁       ");
+    console.log("="*50);
+    console.log(`👤 User: ${user.name} (${user.email})`);
+    console.log(`🤖 Bot Detection: ${consensus.integrity.botDetection.toUpperCase()}`);
+    console.log("--------------------------------------------------");
+    console.log(`📄 Aadhaar Forgery: ${consensus.integrity.aadhaarForgery.toUpperCase()}`);
+    console.log(`👥 Face Similarity: ${consensus.integrity.faceMatch ? 'MATCHED' : 'FAILED'} (Dist: ${consensus.integrity.faceDistance?.toFixed(4)})`);
+    console.log(`🔗 Data Cross-Match: ${consensus.identity.overallCrossMatch ? 'CONSISTENT' : 'DISCREPANCY DETECTED'}`);
+    console.log(`🧩 Profile Sync: ${consensus.identity.profileConsistency ? 'VERIFIED' : 'FAILED'}`);
+    console.log("--------------------------------------------------");
+    console.log(`🏆 FINAL VERDICT: ${consensus.verdict}`);
+    console.log("="*50 + "\n");
+
     res.write(JSON.stringify({ 
         type: 'complete', 
         kycStatus: user.kycStatus, 
-        verificationStep: user.verificationStep 
+        verificationStep: user.verificationStep,
+        consensus
     }) + '\n');
     
     res.end();
@@ -286,9 +349,28 @@ const verifyBiometric = async (req, res) => {
         
         // Update User if verified
         if (matchResult.verified) {
-            user.verificationStep = 4; // Complete
-            user.kycStatus = 'verified'; // Confirm final
+            user.verificationStep = 4; // Move to Voice/Complete
+            // We'll set kycStatus to verified ONLY after consensus in some flows, 
+            // but here we follow the current logic.
+            user.kycStatus = 'verified'; 
             await user.save();
+
+            // Store in Kyc model too
+            await Kyc.findOneAndUpdate(
+                { user: user._id },
+                { 
+                    $set: { 
+                        faceMatch: {
+                            isMatch: matchResult.verified,
+                            distance: matchResult.distance,
+                            threshold: matchResult.threshold,
+                            model: matchResult.model || 'DeepFace',
+                            verified: matchResult.verified
+                        }
+                    } 
+                },
+                { upsert: true }
+            );
         }
         
         res.json(matchResult);
@@ -299,4 +381,51 @@ const verifyBiometric = async (req, res) => {
     }
 };
 
-export { updatePersonalInfo, uploadDocuments, verifyBiometric };
+const getKycAnalysis = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const kyc = await Kyc.findOne({ user: user._id }).lean();
+        const biometric = await BiometricSession.findOne({ 
+            session_id: { $regex: user._id.toString(), $options: 'i' }
+        }).sort({ createdAt: -1 }).lean();
+
+        const analysis = {
+            user: {
+                name: user.name,
+                email: user.email,
+                botDetection: user.botDetectionResult
+            },
+            documents: kyc ? {
+                aadhaar: kyc.aadhaar,
+                pan: kyc.pan,
+                forgery: kyc.aadhaarForgeryDetection,
+                crossMatch: kyc.AadharPanMatch,
+                profileMatch: kyc.profileMatch,
+                faceMatch: kyc.faceMatch
+            } : null,
+            biometric: biometric ? {
+                face: biometric.results?.face,
+                voice: biometric.results?.voice,
+                status: biometric.results?.status
+            } : null,
+            finalVerdict: {
+                status: user.kycStatus,
+                isTrusted: (
+                    user.kycStatus === 'verified' && 
+                    user.botDetectionResult?.prediction === 'human' &&
+                    kyc?.aadhaarForgeryDetection?.verdict === 'Real' &&
+                    kyc?.faceMatch?.isMatch === true
+                ) ? 'TRUSTED' : 'SUSPICIOUS'
+            }
+        };
+
+        res.json(analysis);
+    } catch (error) {
+        console.error("Analysis Error:", error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+export { updatePersonalInfo, uploadDocuments, verifyBiometric, getKycAnalysis };
