@@ -5,7 +5,7 @@ const kycSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
-    unique: true
+    unique: false
   },
   aadhaar: {
     number: String,
