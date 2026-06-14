@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import io
 from PIL import Image
-from .utils import preprocess_main
+from utils import preprocess_main
 import tempfile
 import os
 

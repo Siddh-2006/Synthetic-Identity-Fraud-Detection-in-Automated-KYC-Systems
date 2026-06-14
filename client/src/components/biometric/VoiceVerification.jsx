@@ -7,6 +7,7 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
     const [countdown, setCountdown] = useState(0);
     const [errorMessage, setErrorMessage] = useState(null);
     const [result, setResult] = useState(null);
+    const [liveTranscript, setLiveTranscript] = useState('');
 
     const audioCtxRef = useRef(null);
     const processorRef = useRef(null);
@@ -14,6 +15,7 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
     const audioDataRef = useRef([]);
     const recordingLengthRef = useRef(0);
     const isRecordingRef = useRef(false);
+    const recognitionRef = useRef(null);
 
     useEffect(() => {
         if (sessionId) {
@@ -77,6 +79,28 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
             inputRef.current.connect(processorRef.current);
             processorRef.current.connect(audioCtxRef.current.destination);
 
+            // Integrate Browser Web Speech API for real-time visual feedback
+            setLiveTranscript('');
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                try {
+                    const rec = new SpeechRecognition();
+                    rec.continuous = false;
+                    rec.interimResults = true;
+                    rec.lang = 'en-US';
+                    rec.onresult = (e) => {
+                        const transcript = Array.from(e.results)
+                            .map(r => r[0].transcript)
+                            .join('');
+                        setLiveTranscript(transcript);
+                    };
+                    rec.start();
+                    recognitionRef.current = rec;
+                } catch (e) {
+                    console.error('[WebSpeech] Init error:', e);
+                }
+            }
+
             setStatus('recording');
             setCountdown(3);
         } catch (err) {
@@ -103,6 +127,11 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
 
             if (processorRef.current) processorRef.current.disconnect();
             if (inputRef.current) inputRef.current.disconnect();
+            if (recognitionRef.current) {
+                try {
+                    recognitionRef.current.stop();
+                } catch (e) {}
+            }
 
             setStatus('processing');
 
@@ -233,6 +262,11 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
                     <div className="text-3xl font-black text-white p-8 bg-white/5 rounded-2xl border border-white/5 shadow-inner leading-relaxed">
                         "{challenge.voice_phrase}"
                     </div>
+                    {liveTranscript && (
+                        <div className="mt-4 p-4 bg-secondary/10 border border-secondary/20 rounded-xl text-secondary text-sm font-bold animate-pulse">
+                            🎤 Spoken: "{liveTranscript}"
+                        </div>
+                    )}
                     <p className="text-xs text-text-muted italic opacity-60">Please read the phrase clearly into your microphone</p>
                 </div>
             )}

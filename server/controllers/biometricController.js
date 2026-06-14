@@ -7,6 +7,19 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import Kyc from '../models/Kyc.js';
+import mongoose from 'mongoose';
+
+const findKycBySessionOrUser = async (session_id, user_id) => {
+    const queryConditions = [];
+    if (session_id && mongoose.Types.ObjectId.isValid(session_id)) {
+        queryConditions.push({ user: session_id });
+    }
+    if (user_id && mongoose.Types.ObjectId.isValid(user_id)) {
+        queryConditions.push({ user: user_id });
+    }
+    if (queryConditions.length === 0) return null;
+    return await Kyc.findOne({ $or: queryConditions });
+};
 
 const debugLog = (msg) => {
     const logPath = path.join(process.cwd(), 'biometric_debug.log');
@@ -219,13 +232,7 @@ export const submitFace = async (req, res) => {
         );
 
         // 8. ALSO Store in Kyc Model (Persistent Record)
-        // Find user by session_id (which is often req.user._id in the frontend)
-        const userKyc = await Kyc.findOne({ 
-            $or: [
-                { user: session_id }, // If session_id is userId
-                { user: req.user?._id } // Fallback to auth user
-            ]
-        });
+        const userKyc = await findKycBySessionOrUser(session_id, req.user?._id);
 
         if (userKyc) {
             userKyc.livenessCheck = {
@@ -292,12 +299,7 @@ export const submitVoice = async (req, res) => {
         );
 
         // 8. ALSO Store in Kyc Model
-        const userKycVoice = await Kyc.findOne({ 
-            $or: [
-                { user: session_id },
-                { user: req.user?._id }
-            ]
-        });
+        const userKycVoice = await findKycBySessionOrUser(session_id, req.user?._id);
 
         if (userKycVoice) {
             userKycVoice.voiceCheck = {

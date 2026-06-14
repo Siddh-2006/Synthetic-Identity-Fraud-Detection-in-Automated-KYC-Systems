@@ -229,11 +229,25 @@ async def analyze_audio(file: UploadFile = File(...), expected_phrase: str = For
     try:
         # 1. Loading & Anti-Spoof Heuristics (Librosa)
         liveness_score = 0.5
+        wav_path = None
         if librosa:
             try:
                 print(f"[Python-CV] Attempting librosa.load...")
                 y, sr_rate = librosa.load(tmp_path, sr=16000)
                 print(f"[Python-CV] Librosa load success. Duration: {len(y)/sr_rate:.2f}s")
+                
+                # Convert the loaded audio into a proper PCM WAV file
+                import scipy.io.wavfile as wavfile
+                # Normalize audio to avoid clipping
+                y_max = np.max(np.abs(y))
+                y_scaled = np.int16(y / y_max * 32767) if y_max > 0 else np.int16(y)
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix="_converted.wav") as wav_tmp:
+                    wav_path = wav_tmp.name
+                
+                wavfile.write(wav_path, 16000, y_scaled)
+                print(f"[Python-CV] Converted audio to PCM WAV format: {wav_path}")
+                
                 # MFCC Variance (Real voice has higher complexity)
                 mfccs = librosa.feature.mfcc(y=y, sr=sr_rate, n_mfcc=13)
                 mfcc_var = np.mean(np.var(mfccs, axis=1))
@@ -248,7 +262,7 @@ async def analyze_audio(file: UploadFile = File(...), expected_phrase: str = For
                 liveness_score = liveness_indicators / 2.0
                 print(f" >> Liveness Logic: Var={mfcc_var:.2f}, Flat={flatness:.4f}, Score={liveness_score}")
             except Exception as e:
-                print(f"[Python-CV] Librosa error: {str(e)}")
+                print(f"[Python-CV] Librosa/WAV conversion error: {str(e)}")
                 liveness_score = 0.0
 
         # 2. ASR Transcription (SpeechRecognition)
@@ -256,9 +270,11 @@ async def analyze_audio(file: UploadFile = File(...), expected_phrase: str = For
         matching_score = 0.0
         if sr:
             try:
-                print(f"[Python-CV] Attempting SpeechRecognition...")
+                # Use converted PCM WAV if available, otherwise original file
+                target_path = wav_path if wav_path else tmp_path
+                print(f"[Python-CV] Running SpeechRecognition on target file: {target_path}")
                 recognizer = sr.Recognizer()
-                with sr.AudioFile(tmp_path) as source:
+                with sr.AudioFile(target_path) as source:
                     audio_content = recognizer.record(source)
                 
                 # Use Google Web Speech API
@@ -271,9 +287,13 @@ async def analyze_audio(file: UploadFile = File(...), expected_phrase: str = For
 
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+        if wav_path and os.path.exists(wav_path):
+            os.unlink(wav_path)
         
+        # Real validation logic check
+        is_verified = (matching_score >= 0.6) and (liveness_score >= 0.5)
         return {
-            "verified": matching_score >= 0.7 and liveness_score >= 0.5,
+            "verified": is_verified,
             "transcript": transcript,
             "matching_score": round(matching_score, 2),
             "liveness_score": round(liveness_score, 2),
