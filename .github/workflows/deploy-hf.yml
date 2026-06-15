@@ -12,6 +12,7 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        
 
       - name: Configure Git
         run: |
@@ -22,7 +23,11 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git clone https://oauth2:${HF_TOKEN}@huggingface.co/spaces/BrightWeb-2k25/kyc hf-space
+          for i in 1 2 3 4 5; do
+            git clone https://oauth2:${HF_TOKEN}@huggingface.co/spaces/BrightWeb-2k25/kyc hf-space && break
+            echo "Retrying in 15 seconds..."
+            sleep 15
+          done
 
       - name: Debug Remote
         run: |
