@@ -22,11 +22,17 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git clone https://BrightWeb-2k25:$HF_TOKEN@huggingface.co/spaces/BrightWeb-2k25/kyc hf-space
+          git clone https://oauth2:${HF_TOKEN}@huggingface.co/spaces/BrightWeb-2k25/kyc hf-space
+
+      - name: Debug Remote
+        run: |
+          cd hf-space
+          git remote -v
 
       - name: Sync DeepFace Service
         run: |
           rsync -av --delete \
+            --exclude='.git' \
             services/biometric/python-microservice/ \
             hf-space/
 
@@ -35,4 +41,4 @@ jobs:
           cd hf-space
           git add .
           git commit -m "Auto deploy from GitHub" || echo "No changes"
-          git push
+          git push origin main
