@@ -315,10 +315,10 @@ except ImportError:
     DEEPFACE_AVAILABLE = False
     print("[Python-CV] WARNING: DeepFace not available. Face verification will be disabled.")
 
-@app.post("/verify_face")
+@app.post("/verify-face")
 async def verify_face(
-    selfie: UploadFile = File(...),
-    document_face: UploadFile = File(...)
+    img1: UploadFile = File(...),
+    img2: UploadFile = File(...)
 ):
     """
     Compares a live selfie against a face extracted from an ID document.
@@ -330,14 +330,14 @@ async def verify_face(
     selfie_path = None
     doc_path = None
     try:
-        # Save selfie to temp file
+        # Save img1 to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp1:
-            tmp1.write(await selfie.read())
+            tmp1.write(await img1.read())
             selfie_path = tmp1.name
 
-        # Save document face to temp file
+        # Save img2 to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp2:
-            tmp2.write(await document_face.read())
+            tmp2.write(await img2.read())
             doc_path = tmp2.name
 
         # Run DeepFace verification
