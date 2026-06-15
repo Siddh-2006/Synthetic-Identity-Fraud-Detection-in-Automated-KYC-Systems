@@ -7,3 +7,6 @@ pydantic
 python-multipart
 deepface
 tf-keras
+librosa
+SpeechRecognition
+scipy

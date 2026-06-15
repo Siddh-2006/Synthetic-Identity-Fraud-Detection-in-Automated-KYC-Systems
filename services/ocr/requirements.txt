@@ -3,3 +3,5 @@ uvicorn
 python-multipart
 numpy
 opencv-python-headless
+easyocr
+PyMuPDF
