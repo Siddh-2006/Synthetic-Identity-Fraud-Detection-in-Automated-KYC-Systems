@@ -305,6 +305,121 @@ async def analyze_audio(file: UploadFile = File(...), expected_phrase: str = For
         if os.path.exists(tmp_path): os.unlink(tmp_path)
         return {"error": f"Critical Python Error: {str(e)}"}
 
+# --- Face Verification (DeepFace) ---
+
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+    print("[Python-CV] DeepFace loaded successfully for face verification.")
+except ImportError:
+    DEEPFACE_AVAILABLE = False
+    print("[Python-CV] WARNING: DeepFace not available. Face verification will be disabled.")
+
+@app.post("/verify_face")
+async def verify_face(
+    selfie: UploadFile = File(...),
+    document_face: UploadFile = File(...)
+):
+    """
+    Compares a live selfie against a face extracted from an ID document.
+    Used for Face Verification step in the KYC pipeline.
+    """
+    if not DEEPFACE_AVAILABLE:
+        return {"verified": False, "similarity": 0, "error": "DeepFace not available"}
+
+    selfie_path = None
+    doc_path = None
+    try:
+        # Save selfie to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp1:
+            tmp1.write(await selfie.read())
+            selfie_path = tmp1.name
+
+        # Save document face to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp2:
+            tmp2.write(await document_face.read())
+            doc_path = tmp2.name
+
+        # Run DeepFace verification
+        result = DeepFace.verify(
+            img1_path=selfie_path,
+            img2_path=doc_path,
+            model_name="VGG-Face",
+            enforce_detection=False  # Don't crash if face is slightly unclear
+        )
+
+        similarity = round(1 - result.get("distance", 1.0), 4)
+        verified = result.get("verified", False)
+
+        print(f"[Python-CV] Face Verification: verified={verified}, similarity={similarity}")
+        return {
+            "verified": verified,
+            "similarity": similarity,
+            "distance": round(result.get("distance", 1.0), 4),
+            "threshold": result.get("threshold", 0.4),
+            "model": "VGG-Face",
+            "status": "SUCCESS"
+        }
+
+    except Exception as e:
+        print(f"[Python-CV] Face Verification Error: {str(e)}")
+        return {"verified": False, "similarity": 0, "error": str(e), "status": "ERROR"}
+    finally:
+        if selfie_path and os.path.exists(selfie_path):
+            os.unlink(selfie_path)
+        if doc_path and os.path.exists(doc_path):
+            os.unlink(doc_path)
+
+
+@app.post("/compare")
+async def compare_faces(
+    file1: UploadFile = File(...),
+    file2: UploadFile = File(...)
+):
+    """
+    Alias endpoint for /verify_face. Accepts file1 and file2 for compatibility
+    with the services/biometric/backend/src/services/faceMatcher.js client.
+    """
+    if not DEEPFACE_AVAILABLE:
+        return {"verified": False, "similarity": 0, "error": "DeepFace not available"}
+
+    path1 = None
+    path2 = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp1:
+            tmp1.write(await file1.read())
+            path1 = tmp1.name
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp2:
+            tmp2.write(await file2.read())
+            path2 = tmp2.name
+
+        result = DeepFace.verify(
+            img1_path=path1,
+            img2_path=path2,
+            model_name="VGG-Face",
+            enforce_detection=False
+        )
+
+        similarity = round(1 - result.get("distance", 1.0), 4)
+        verified = result.get("verified", False)
+
+        print(f"[Python-CV] Compare Faces: verified={verified}, similarity={similarity}")
+        return {
+            "verified": verified,
+            "similarity": similarity,
+            "distance": round(result.get("distance", 1.0), 4),
+            "status": "SUCCESS"
+        }
+
+    except Exception as e:
+        print(f"[Python-CV] Compare Faces Error: {str(e)}")
+        return {"verified": False, "similarity": 0, "error": str(e)}
+    finally:
+        if path1 and os.path.exists(path1): os.unlink(path1)
+        if path2 and os.path.exists(path2): os.unlink(path2)
+
+
 if __name__ == "__main__":
     import uvicorn
     # DEFAULT TO PORT 8080 TO AVOID CONFLICTS
