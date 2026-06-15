@@ -37,7 +37,8 @@ const FaceLiveness = ({ sessionId, onComplete }) => {
     setErrorMessage(null);
     console.log(`[Challenge] Requesting challenge...`);
     try {
-      const resp = await fetch('http://localhost:5000/api/biometric/challenge/initiate', {
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const resp = await fetch(`${API_BASE}/api/biometric/challenge/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId || 'temp-session' })
@@ -119,7 +120,8 @@ const FaceLiveness = ({ sessionId, onComplete }) => {
         blobSize: blob.size
       });
 
-      const resp = await fetch('http://localhost:5000/api/biometric/face/submit', {
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const resp = await fetch(`${API_BASE}/api/biometric/face/submit`, {
         method: 'POST',
         body: formData
       });

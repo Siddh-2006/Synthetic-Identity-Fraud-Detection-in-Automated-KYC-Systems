@@ -13,10 +13,8 @@ const analyzeBehavior = async (req, res) => {
 
         console.log(`[BotController] Received request. Events: ${events?.length || 0}, Features: ${!!features}`);
 
-        // Forward to Python Service (Port 5001)
-        const pythonServiceUrl = 'http://127.0.0.1:5001/predict';
-
-        const response = await axios.post(pythonServiceUrl, {
+        const pythonServiceUrl = process.env.BOT_DETECTION_URL || 'http://127.0.0.1:5001';
+        const response = await axios.post(`${pythonServiceUrl}/predict`, {
             events: events || [],
             features: features || null,
             metadata: metadata || {}

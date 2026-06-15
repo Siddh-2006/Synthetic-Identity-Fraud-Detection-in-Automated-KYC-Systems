@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, CheckCircle, Smartphone, Camera, Loader2, ArrowRight, ShieldCheck, ScanFace, FileText, Server, Mic, AlertCircle } from 'lucide-react';
+import { Upload, CheckCircle, Smartphone, Camera, Loader2, ArrowRight, ShieldCheck, ScanFace, FileText, Server, Mic, AlertCircle, Brain, FileCheck, Activity, RefreshCcw } from 'lucide-react';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 import useAuthStore from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -93,7 +94,7 @@ const KYCPage = () => {
       const fetchAnalysis = async () => {
         try {
           console.log("Fetching final analysis");
-          const res = await axios.get('http://localhost:5000/api/kyc/analysis', { withCredentials: true });
+          const res = await axios.get(`${API_BASE}/api/kyc/analysis`, { withCredentials: true });
           console.log("Final analysis received", res.data);
           if (res.data) {
             setFinalAnalysis(res.data);
@@ -272,7 +273,7 @@ const KYCPage = () => {
       formData.append('pan', files.pan);
 
       // Use fetch for streaming
-      const response = await fetch('http://localhost:5000/api/kyc/upload', {
+      const response = await fetch(`${API_BASE}/api/kyc/upload`, {
         method: 'POST',
         headers: {}, // No manual auth header, usage of cookies
         credentials: 'include', // Important for sending cookies
@@ -331,7 +332,7 @@ const KYCPage = () => {
     formData.append('selfie', capturedImage, "selfie.jpg");
 
     try {
-      const res = await axios.post('http://localhost:5000/api/kyc/biometric', formData, {
+      const res = await axios.post(`${API_BASE}/api/kyc/biometric`, formData, {
         withCredentials: true // Ensure cookies are sent
       });
       setBiometricResult(res.data);

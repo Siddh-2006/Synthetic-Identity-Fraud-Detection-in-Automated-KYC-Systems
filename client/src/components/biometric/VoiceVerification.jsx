@@ -39,7 +39,8 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
         setStatus('initializing');
         try {
             // Using the biometric routes at /api/biometric
-            const resp = await fetch('http://localhost:5000/api/biometric/challenge/initiate', {
+            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            const resp = await fetch(`${API_BASE}/api/biometric/challenge/initiate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: sessionId || 'temp-voice-session' })
@@ -192,7 +193,8 @@ const VoiceVerification = ({ sessionId, onComplete }) => {
         formData.append('audio_file', blob, 'voice_check.wav');
 
         try {
-            const resp = await fetch('http://localhost:5000/api/biometric/voice/submit', {
+            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            const resp = await fetch(`${API_BASE}/api/biometric/voice/submit`, {
                 method: 'POST',
                 body: formData
             });

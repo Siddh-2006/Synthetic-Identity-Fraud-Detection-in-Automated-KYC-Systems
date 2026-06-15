@@ -110,7 +110,8 @@ const LiveBotDetector = () => {
                     metadata: { user_agent: navigator.userAgent }
                 };
 
-                const res = await axios.post('http://localhost:5000/api/bot-detection/analyze', payload, {
+                const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+                const res = await axios.post(`${API_BASE}/api/bot-detection/analyze`, payload, {
                     withCredentials: true
                 });
 

@@ -20,7 +20,7 @@ app.use(cookieParser());
 
 // CORS configuration associated with the Frontend
 const corsOptions = {
-  origin: 'http://localhost:5173', // Vite default port
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Vite default port
   credentials: true, // Allow cookies
 };
 app.use(cors(corsOptions));

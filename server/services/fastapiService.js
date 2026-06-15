@@ -2,7 +2,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
 
-const FASTAPI_URL = process.env.PYTHON_SERVICE_URL || 'http://127.0.0.1:8000';
+const FASTAPI_URL = process.env.OCR_SERVICE_URL || process.env.PYTHON_SERVICE_URL || 'http://127.0.0.1:8000';
 
 const extractAadhaar = async (filePath) => {
   try {
@@ -74,8 +74,8 @@ const extractFace = async (filePath) => {
   }
 };
 
-const FRAUD_DETECTION_URL = 'http://127.0.0.1:8001';
-const FACE_VERIFICATION_URL = 'http://127.0.0.1:8002';
+const FRAUD_DETECTION_URL = process.env.DOC_PREPROCESS_URL || 'http://127.0.0.1:8001';
+const FACE_VERIFICATION_URL = process.env.FACE_VERIFICATION_URL || 'http://127.0.0.1:8002';
 
 const detectFraud = async (filePath) => {
   try {
