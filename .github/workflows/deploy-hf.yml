@@ -1,42 +1,49 @@
 name: Deploy DeepFace Service to Hugging Face
 
 on:
-push:
-branches:
-- main
+  push:
+    branches:
+      - main
 
 jobs:
-deploy:
-runs-on: ubuntu-latest
+  deploy:
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Checkout Repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
 
-  - name: Configure Git
-    run: |
-      git config --global user.email "action@github.com"
-      git config --global user.name "GitHub Action"
+      - name: Configure Git
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
 
-  - name: Clone Hugging Face Space
-    env:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
-    run: |
-      git clone https://BrightWeb-2k25:$HF_TOKEN@huggingface.co/spaces/BrightWeb-2k25/kyc hf-space
+      - name: Clone Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          for i in 1 2 3 4 5; do
+            git clone https://oauth2:${HF_TOKEN}@huggingface.co/spaces/BrightWeb-2k25/kyc hf-space && break
+            echo "Retrying in 15 seconds..."
+            sleep 15
+          done
 
-  - name: Sync DeepFace Service
-    run: |
-      rsync -av --delete \
-        services/biometric/python-microservice/ \
-        hf-space/
+      - name: Debug Remote
+        run: |
+          cd hf-space
+          git remote -v
 
-  - name: Push to Hugging Face
-    env:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
-    run: |
-      cd hf-space
-      git add .
-      git commit -m "Auto deploy from GitHub" || echo "No changes"
-      git push
-```
+      - name: Sync DeepFace Service
+        run: |
+          rsync -av --delete \
+            --exclude='.git' \
+            services/biometric/python-microservice/ \
+            hf-space/
+
+      - name: Push to Hugging Face
+        run: |
+          cd hf-space
+          git add .
+          git commit -m "Auto deploy from GitHub" || echo "No changes"
+          git push origin main
