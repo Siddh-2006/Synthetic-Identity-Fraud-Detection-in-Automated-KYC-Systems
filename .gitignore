@@ -152,3 +152,6 @@ yarn-error.log*
 # Windows
 Thumbs.db
 Desktop.ini
+
+# Project Test Samples & Outputs
+services/document-ai/test/

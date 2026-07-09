@@ -144,4 +144,23 @@ const verifyFace = async (aadhaarFaceBuffer, panFaceBuffer) => {
   }
 };
 
-export { extractAadhaar, extractPan, extractFace, detectFraud, verifyFace };
+const processDocument = async (filePath) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(filePath));
+
+    const start = Date.now();
+    const response = await axios.post(`${FASTAPI_URL}/api/document/process`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+      },
+    });
+    console.log(`📡 [FastAPI] Document Processing took ${Date.now() - start}ms`);
+    return response.data;
+  } catch (error) {
+    console.error('FastAPI Document Processing Error:', error.message);
+    throw new Error('Failed to process document');
+  }
+};
+
+export { extractAadhaar, extractPan, extractFace, detectFraud, verifyFace, processDocument };

@@ -32,9 +32,9 @@ $Services = @(
         Color = "Blue"
     },
     @{
-        Name = "3. OCR Microservice (Port 8000)"
-        Path = Join-Path $RootPath "services\ocr"
-        Command = "python app/main.py"
+        Name = "3. Document AI Microservice (Port 8000)"
+        Path = Join-Path $RootPath "services\document-ai"
+        Command = ".venv\Scripts\python.exe app/main.py"
         Color = "Cyan"
     },
     @{

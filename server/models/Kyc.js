@@ -12,7 +12,7 @@ const kycSchema = new mongoose.Schema({
     name: String,
     dob: String,
     gender: String,
-    details: { type: Map, of: String } // Store all extracted fields
+    details: { type: Map, of: mongoose.Schema.Types.Mixed } // Store all extracted fields
   },
   aadhaarForgeryDetection: {
     verdict: String,
@@ -25,7 +25,7 @@ const kycSchema = new mongoose.Schema({
     name: String,
     fatherName: String,
     dob: String,
-    details: { type: Map, of: String }
+    details: { type: Map, of: mongoose.Schema.Types.Mixed }
   },
   faceMatch: {
     isMatch: { type: Boolean, default: false },

@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+opencv-python<5
+PyMuPDF
+easyocr
+deepface
+cloudinary
+pydantic
+pydantic-settings
+python-dotenv
+pillow
+ultralytics
+tf-keras
+paddlepaddle
+paddleocr

@@ -1,0 +1,3 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/services/document-ai/.venv/Scripts/python.exe"
+}
